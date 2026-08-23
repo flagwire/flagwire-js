@@ -26,7 +26,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@12.0.2
       - run: pnpm install --frozen-lockfile
@@ -37,6 +36,4 @@ jobs:
       - name: Verify release artifacts
         run: node scripts/verify-release.mjs
       - name: Publish in dependency order
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
         run: node scripts/publish-release.mjs
