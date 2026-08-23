@@ -2,7 +2,17 @@
   "name": "flagwire-typegen",
   "version": "0.1.0",
   "description": "Generate type-safe FlagWire flag definitions",
+  "keywords": [
+    "feature-flags",
+    "codegen",
+    "cli",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/flagwire/flagwire-js/tree/main/tools/typegen-cli#readme",
+  "bugs": {
+    "url": "https://github.com/flagwire/flagwire-js/issues"
+  },
   "type": "module",
   "bin": {
     "flagwire-typegen": "./dist/index.js"
@@ -26,6 +36,7 @@
     "directory": "tools/typegen-cli"
   },
   "publishConfig": {
+    "access": "public",
     "provenance": true
   },
   "scripts": {

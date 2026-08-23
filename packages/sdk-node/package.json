@@ -2,7 +2,17 @@
   "name": "@flagwire/sdk-node",
   "version": "0.1.0",
   "description": "Local-evaluation Node.js SDK for FlagWire feature flags",
+  "keywords": [
+    "feature-flags",
+    "nodejs",
+    "server",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/flagwire/flagwire-js/tree/main/packages/sdk-node#readme",
+  "bugs": {
+    "url": "https://github.com/flagwire/flagwire-js/issues"
+  },
   "type": "module",
   "files": [
     "dist"
