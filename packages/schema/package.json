@@ -2,7 +2,17 @@
   "name": "@flagwire/schema",
   "version": "0.1.0",
   "description": "Normative schemas and wire contracts for FlagWire",
+  "keywords": [
+    "feature-flags",
+    "schema",
+    "typescript",
+    "zod"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/flagwire/flagwire-js/tree/main/packages/schema#readme",
+  "bugs": {
+    "url": "https://github.com/flagwire/flagwire-js/issues"
+  },
   "type": "module",
   "files": [
     "dist"

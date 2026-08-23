@@ -26,7 +26,7 @@ export function FlagExample() {
     const next = createClient({
       baseUrl,
       clientKey,
-      context: { key: "example-user", attributes: { plan: "pro" } },
+      context: { key: "example-user", attributes: { region: "eu-west" } },
       stream: true,
     });
     setClient(next);

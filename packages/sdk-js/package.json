@@ -2,7 +2,17 @@
   "name": "@flagwire/sdk-js",
   "version": "0.1.0",
   "description": "Zero-dependency browser SDK for FlagWire feature flags",
+  "keywords": [
+    "feature-flags",
+    "browser",
+    "javascript",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/flagwire/flagwire-js/tree/main/packages/sdk-js#readme",
+  "bugs": {
+    "url": "https://github.com/flagwire/flagwire-js/issues"
+  },
   "type": "module",
   "files": [
     "dist"

@@ -119,16 +119,18 @@ describe("normative schemas", () => {
       evaluationContextSchema.safeParse({
         key: "user-1",
         attributes: {
-          plan: "pro",
+          region: "eu-west",
           age: 42,
-          internal: true,
+          betaTester: true,
           groups: ["staff", "beta"],
         },
       }).success,
     ).toBe(true);
     expect(
-      evaluationContextSchema.safeParse({ key: "user-1", attributes: { nested: { plan: "pro" } } })
-        .success,
+      evaluationContextSchema.safeParse({
+        key: "user-1",
+        attributes: { nested: { region: "eu-west" } },
+      }).success,
     ).toBe(false);
   });
 

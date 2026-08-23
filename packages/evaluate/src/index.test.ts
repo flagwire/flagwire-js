@@ -65,7 +65,7 @@ describe("bucketing compatibility vectors", () => {
 });
 
 describe("evaluation compatibility vectors", () => {
-  it("contains the committed Day 3 coverage floor", () => {
+  it("covers the committed compatibility cases", () => {
     expect(evalVectors).toHaveLength(50);
   });
 

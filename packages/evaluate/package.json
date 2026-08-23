@@ -2,7 +2,16 @@
   "name": "@flagwire/evaluate",
   "version": "0.1.0",
   "description": "Deterministic local evaluation engine for FlagWire",
+  "keywords": [
+    "feature-flags",
+    "evaluation",
+    "typescript"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/flagwire/flagwire-js/tree/main/packages/evaluate#readme",
+  "bugs": {
+    "url": "https://github.com/flagwire/flagwire-js/issues"
+  },
   "type": "module",
   "files": [
     "dist",
