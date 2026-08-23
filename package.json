@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "turbo run lint && pnpm format:check",
-    "test": "turbo run test",
+    "test": "node --test scripts/*.test.mjs && turbo run test",
     "typecheck": "turbo run typecheck",
     "vectors:check": "node scripts/check-golden-vectors.mjs"
   },
