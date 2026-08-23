@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
+import { parseNpmViewVersion } from "./npm-view-version.mjs";
 import { releasePackages } from "./release-packages.mjs";
 
 for (const { file, name, version } of releasePackages) {
@@ -10,7 +11,7 @@ for (const { file, name, version } of releasePackages) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (existing.status === 0) {
-    const published = JSON.parse(existing.stdout);
+    const published = parseNpmViewVersion(existing.stdout, spec);
     if (published !== version) throw new Error(`Unexpected registry response for ${spec}`);
     console.log(`${spec} is already published; skipping immutable version.`);
     continue;
