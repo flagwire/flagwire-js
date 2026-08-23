@@ -1,0 +1,47 @@
+{
+  "name": "@flagwire/sdk-js",
+  "version": "0.1.0",
+  "description": "Zero-dependency browser SDK for FlagWire feature flags",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flagwire/flagwire-js.git",
+    "directory": "packages/sdk-js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --minify --format=esm --platform=browser --target=es2022 --outfile=dist/index.js",
+    "lint": "eslint src",
+    "size": "size-limit",
+    "test": "vitest run && size-limit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@size-limit/file": "13.0.3",
+    "esbuild": "0.28.2",
+    "size-limit": "13.0.3"
+  },
+  "size-limit": [
+    {
+      "gzip": true,
+      "path": "dist/index.js",
+      "limit": "3 kB"
+    }
+  ]
+}

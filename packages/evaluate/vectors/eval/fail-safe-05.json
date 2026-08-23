@@ -1,0 +1,42 @@
+{
+  "name": "invalid variant reference uses code default",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 7,
+    "publishedAt": 1700000000000,
+    "revoked": false,
+    "segments": {},
+    "flags": {
+      "test-flag": {
+        "type": "boolean",
+        "version": 3,
+        "salt": "0123456789abcdef",
+        "on": true,
+        "variants": [
+          {
+            "key": "off",
+            "value": false
+          },
+          {
+            "key": "on",
+            "value": true
+          }
+        ],
+        "offVariant": 0,
+        "fallthrough": {
+          "variant": 99
+        },
+        "rules": []
+      }
+    }
+  },
+  "context": {
+    "key": "u"
+  },
+  "expected": {
+    "variantKey": null,
+    "value": "CODE_DEFAULT",
+    "reason": "ERROR"
+  }
+}

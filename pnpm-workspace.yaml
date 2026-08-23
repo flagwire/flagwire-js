@@ -1,0 +1,18 @@
+packages:
+  - examples/*
+  - packages/*
+  - tools/*
+
+overrides:
+  "esbuild@<=0.24.2": 0.25.0
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+strictPeerDependencies: true
+
+minimumReleaseAgeExclude:
+  - next@16.3.2
+  - react@19.2.8
+  - react-dom@19.2.8

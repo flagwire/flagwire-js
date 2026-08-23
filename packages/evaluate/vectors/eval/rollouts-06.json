@@ -1,0 +1,71 @@
+{
+  "name": "matching rule preserves reason through rollout",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 7,
+    "publishedAt": 1700000000000,
+    "revoked": false,
+    "segments": {},
+    "flags": {
+      "test-flag": {
+        "type": "boolean",
+        "version": 3,
+        "salt": "0123456789abcdef",
+        "on": true,
+        "variants": [
+          {
+            "key": "off",
+            "value": false
+          },
+          {
+            "key": "on",
+            "value": true
+          }
+        ],
+        "offVariant": 0,
+        "fallthrough": {
+          "variant": 0
+        },
+        "rules": [
+          {
+            "id": "rollout-rule",
+            "clauses": [
+              {
+                "attr": "plan",
+                "op": "eq",
+                "values": ["pro"],
+                "negate": false
+              }
+            ],
+            "serve": {
+              "rollout": {
+                "variations": [
+                  {
+                    "variant": 1,
+                    "weight": 50000
+                  },
+                  {
+                    "variant": 0,
+                    "weight": 50000
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "context": {
+    "key": "user-1",
+    "attributes": {
+      "plan": "pro"
+    }
+  },
+  "expected": {
+    "variantKey": "on",
+    "value": true,
+    "reason": "RULE_MATCH:rollout-rule"
+  }
+}

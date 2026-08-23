@@ -1,0 +1,15 @@
+.astro
+.output
+.next
+.tanstack
+.turbo
+.wrangler
+dist
+drizzle
+node_modules
+playwright-report
+release
+test-results
+pnpm-lock.yaml
+routeTree.gen.ts
+auth.generated.ts

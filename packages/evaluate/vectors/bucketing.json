@@ -1,0 +1,86 @@
+[
+  {
+    "contextKey": "user-1",
+    "flagKey": "new-checkout",
+    "salt": "0123456789abcdef",
+    "expectedBucketUint32": 1270273690,
+    "expectedFloat12dp": 0.295758640859
+  },
+  {
+    "contextKey": "user-2",
+    "flagKey": "new-checkout",
+    "salt": "0123456789abcdef",
+    "expectedBucketUint32": 2494462029,
+    "expectedFloat12dp": 0.580787199782
+  },
+  {
+    "contextKey": "",
+    "flagKey": "new-checkout",
+    "salt": "0123456789abcdef",
+    "expectedBucketUint32": 2569104276,
+    "expectedFloat12dp": 0.598166202195
+  },
+  {
+    "contextKey": "🚀",
+    "flagKey": "launch",
+    "salt": "fedcba9876543210",
+    "expectedBucketUint32": 2390768489,
+    "expectedFloat12dp": 0.556644166121
+  },
+  {
+    "contextKey": "café",
+    "flagKey": "pricing.test",
+    "salt": "a1b2c3d4e5f60718",
+    "expectedBucketUint32": 953215369,
+    "expectedFloat12dp": 0.221937747905
+  },
+  {
+    "contextKey": "same",
+    "flagKey": "flag-a",
+    "salt": "0000000000000000",
+    "expectedBucketUint32": 1685671660,
+    "expectedFloat12dp": 0.392476017587
+  },
+  {
+    "contextKey": "same",
+    "flagKey": "flag-b",
+    "salt": "0000000000000000",
+    "expectedBucketUint32": 4153084138,
+    "expectedFloat12dp": 0.966965252999
+  },
+  {
+    "contextKey": "same",
+    "flagKey": "flag-a",
+    "salt": "ffffffffffffffff",
+    "expectedBucketUint32": 1774884951,
+    "expectedFloat12dp": 0.413247605553
+  },
+  {
+    "contextKey": "tenant:user:123",
+    "flagKey": "payments-v2",
+    "salt": "1234567890abcdef",
+    "expectedBucketUint32": 587700822,
+    "expectedFloat12dp": 0.136834760662
+  },
+  {
+    "contextKey": "A",
+    "flagKey": "a",
+    "salt": "1111111111111111",
+    "expectedBucketUint32": 1610235386,
+    "expectedFloat12dp": 0.374912141357
+  },
+  {
+    "contextKey": "very-long-context-key-0123456789-abcdefghijklmnopqrstuvwxyz",
+    "flagKey": "long-flag-key.test",
+    "salt": "abcdefabcdefabcd",
+    "expectedBucketUint32": 2704953973,
+    "expectedFloat12dp": 0.629796174588
+  },
+  {
+    "contextKey": "你好",
+    "flagKey": "i18n-rollout",
+    "salt": "9999999999999999",
+    "expectedBucketUint32": 3734192613,
+    "expectedFloat12dp": 0.869434469612
+  }
+]

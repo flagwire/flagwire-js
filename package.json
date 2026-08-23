@@ -1,0 +1,33 @@
+{
+  "name": "flagwire-js",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MIT-licensed JavaScript and TypeScript SDKs for FlagWire.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "audit:prod": "pnpm audit --prod --audit-level high",
+    "boundary:check": "node scripts/check-oss-boundary.mjs",
+    "build": "turbo run build",
+    "check": "pnpm boundary:check && pnpm vectors:check && pnpm audit:prod && pnpm build && pnpm lint && pnpm typecheck && pnpm test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint && pnpm format:check",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "vectors:check": "node scripts/check-golden-vectors.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.34.0",
+    "@types/node": "24.3.0",
+    "eslint": "9.34.0",
+    "prettier": "3.6.2",
+    "turbo": "2.5.6",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.41.0",
+    "vitest": "4.1.0"
+  }
+}

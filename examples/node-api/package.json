@@ -1,0 +1,19 @@
+{
+  "name": "@flagwire/example-node-api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/server.ts --bundle --format=esm --platform=node --target=node22 --external:@flagwire/sdk-node --outfile=dist/server.js",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flagwire/sdk-node": "workspace:*"
+  },
+  "devDependencies": {
+    "@flagwire/sdk-js": "workspace:*",
+    "@types/node": "24.3.0",
+    "esbuild": "0.28.2"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "revoked bundle uses code default",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 8,
+    "publishedAt": 1700000000001,
+    "revoked": true,
+    "segments": {},
+    "flags": {}
+  },
+  "context": {
+    "key": "u"
+  },
+  "expected": {
+    "variantKey": null,
+    "value": "CODE_DEFAULT",
+    "reason": "REVOKED"
+  }
+}

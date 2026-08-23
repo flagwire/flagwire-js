@@ -1,0 +1,91 @@
+{
+  "name": "segment groups use OR",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 7,
+    "publishedAt": 1700000000000,
+    "revoked": false,
+    "segments": {
+      "target": [
+        {
+          "clauses": [
+            {
+              "attr": "country",
+              "op": "eq",
+              "values": ["US"],
+              "negate": false
+            },
+            {
+              "attr": "plan",
+              "op": "eq",
+              "values": ["pro"],
+              "negate": false
+            }
+          ]
+        },
+        {
+          "clauses": [
+            {
+              "attr": "email",
+              "op": "endsWith",
+              "values": ["@flagwire.dev"],
+              "negate": false
+            }
+          ]
+        }
+      ]
+    },
+    "flags": {
+      "test-flag": {
+        "type": "boolean",
+        "version": 3,
+        "salt": "0123456789abcdef",
+        "on": true,
+        "variants": [
+          {
+            "key": "off",
+            "value": false
+          },
+          {
+            "key": "on",
+            "value": true
+          }
+        ],
+        "offVariant": 0,
+        "fallthrough": {
+          "variant": 0
+        },
+        "rules": [
+          {
+            "id": "rule-1",
+            "clauses": [
+              {
+                "attr": "",
+                "op": "segment",
+                "values": ["target"],
+                "negate": false
+              }
+            ],
+            "serve": {
+              "variant": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "context": {
+    "key": "u",
+    "attributes": {
+      "country": "IN",
+      "plan": "free",
+      "email": "a@flagwire.dev"
+    }
+  },
+  "expected": {
+    "variantKey": "on",
+    "value": true,
+    "reason": "RULE_MATCH:rule-1"
+  }
+}

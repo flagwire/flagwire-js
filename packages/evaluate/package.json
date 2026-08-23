@@ -1,0 +1,42 @@
+{
+  "name": "@flagwire/evaluate",
+  "version": "0.1.0",
+  "description": "Deterministic local evaluation engine for FlagWire",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist",
+    "vectors"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vectors/*": "./vectors/*"
+  },
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flagwire/flagwire-js.git",
+    "directory": "packages/evaluate"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --minify --format=esm --platform=neutral --target=es2022 --external:@flagwire/schema --outfile=dist/index.js",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@flagwire/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

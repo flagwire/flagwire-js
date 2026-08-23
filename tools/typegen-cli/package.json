@@ -1,0 +1,41 @@
+{
+  "name": "flagwire-typegen",
+  "version": "0.1.0",
+  "description": "Generate type-safe FlagWire flag definitions",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "flagwire-typegen": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flagwire/flagwire-js.git",
+    "directory": "tools/typegen-cli"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --minify --format=esm --platform=node --target=node20 --outfile=dist/index.js",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "esbuild": "0.28.2"
+  }
+}

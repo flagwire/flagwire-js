@@ -1,0 +1,73 @@
+{
+  "name": "negated matching segment does not match",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 7,
+    "publishedAt": 1700000000000,
+    "revoked": false,
+    "segments": {
+      "paid": [
+        {
+          "clauses": [
+            {
+              "attr": "plan",
+              "op": "eq",
+              "values": ["pro"],
+              "negate": false
+            }
+          ]
+        }
+      ]
+    },
+    "flags": {
+      "test-flag": {
+        "type": "boolean",
+        "version": 3,
+        "salt": "0123456789abcdef",
+        "on": true,
+        "variants": [
+          {
+            "key": "off",
+            "value": false
+          },
+          {
+            "key": "on",
+            "value": true
+          }
+        ],
+        "offVariant": 0,
+        "fallthrough": {
+          "variant": 0
+        },
+        "rules": [
+          {
+            "id": "rule-1",
+            "clauses": [
+              {
+                "attr": "",
+                "op": "segment",
+                "values": ["paid"],
+                "negate": true
+              }
+            ],
+            "serve": {
+              "variant": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "context": {
+    "key": "u",
+    "attributes": {
+      "plan": "pro"
+    }
+  },
+  "expected": {
+    "variantKey": "off",
+    "value": false,
+    "reason": "FALLTHROUGH"
+  }
+}

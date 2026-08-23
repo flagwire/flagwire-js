@@ -1,0 +1,28 @@
+{
+  "name": "@flagwire/example-nextjs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --port 3001",
+    "lint": "eslint app tests playwright.config.ts",
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flagwire/sdk-js": "workspace:*",
+    "@flagwire/sdk-node": "workspace:*",
+    "@flagwire/sdk-react": "workspace:*",
+    "next": "16.3.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.3.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@types/ws": "8.18.1",
+    "ws": "8.21.3"
+  }
+}

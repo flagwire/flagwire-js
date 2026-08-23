@@ -1,0 +1,60 @@
+{
+  "name": "semverGt orders a release after prerelease",
+  "bundle": {
+    "fmt": 1,
+    "envId": "env_test",
+    "version": 7,
+    "publishedAt": 1700000000000,
+    "revoked": false,
+    "segments": {},
+    "flags": {
+      "test-flag": {
+        "type": "boolean",
+        "version": 3,
+        "salt": "0123456789abcdef",
+        "on": true,
+        "variants": [
+          {
+            "key": "off",
+            "value": false
+          },
+          {
+            "key": "on",
+            "value": true
+          }
+        ],
+        "offVariant": 0,
+        "fallthrough": {
+          "variant": 0
+        },
+        "rules": [
+          {
+            "id": "rule-1",
+            "clauses": [
+              {
+                "attr": "version",
+                "op": "semverGt",
+                "values": ["2.0.0-rc.1"],
+                "negate": false
+              }
+            ],
+            "serve": {
+              "variant": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "context": {
+    "key": "u",
+    "attributes": {
+      "version": "2.0.0"
+    }
+  },
+  "expected": {
+    "variantKey": "on",
+    "value": true,
+    "reason": "RULE_MATCH:rule-1"
+  }
+}

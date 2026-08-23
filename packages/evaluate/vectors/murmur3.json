@@ -1,0 +1,48 @@
+[
+  { "input": "", "seed": 0, "expectedUint32": 0 },
+  { "input": "a", "seed": 0, "expectedUint32": 1009084850 },
+  { "input": "ab", "seed": 0, "expectedUint32": 2613040991 },
+  { "input": "abc", "seed": 0, "expectedUint32": 3017643002 },
+  { "input": "abcd", "seed": 0, "expectedUint32": 1139631978 },
+  { "input": "abcde", "seed": 0, "expectedUint32": 3902511862 },
+  { "input": "abcdef", "seed": 0, "expectedUint32": 1635893381 },
+  { "input": "abcdefg", "seed": 0, "expectedUint32": 2285673222 },
+  { "input": "abcdefgh", "seed": 0, "expectedUint32": 1239272644 },
+  { "input": "hello", "seed": 0, "expectedUint32": 613153351 },
+  { "input": "Hello", "seed": 0, "expectedUint32": 316307400 },
+  { "input": "hello world", "seed": 0, "expectedUint32": 1586663183 },
+  {
+    "input": "The quick brown fox jumps over the lazy dog",
+    "seed": 0,
+    "expectedUint32": 776992547
+  },
+  {
+    "input": "0123456789abcdef0123456789abcdef",
+    "seed": 0,
+    "expectedUint32": 3007520238
+  },
+  {
+    "input": "0123456789abcdef0123456789abcdef0",
+    "seed": 0,
+    "expectedUint32": 787549363
+  },
+  { "input": "flagwire", "seed": 0, "expectedUint32": 119348820 },
+  {
+    "input": "user-123:new-checkout:0123456789abcdef",
+    "seed": 0,
+    "expectedUint32": 956233461
+  },
+  { "input": "with spaces", "seed": 0, "expectedUint32": 2515971982 },
+  { "input": "line\nbreak", "seed": 0, "expectedUint32": 3441254551 },
+  { "input": "null\u0000byte", "seed": 0, "expectedUint32": 298535477 },
+  { "input": "café", "seed": 0, "expectedUint32": 605818632 },
+  { "input": "é", "seed": 0, "expectedUint32": 269551495 },
+  { "input": "é", "seed": 0, "expectedUint32": 2670895720 },
+  { "input": "你好", "seed": 0, "expectedUint32": 337357348 },
+  { "input": "こんにちは", "seed": 0, "expectedUint32": 757219804 },
+  { "input": "مرحبا", "seed": 0, "expectedUint32": 1840427645 },
+  { "input": "🚀", "seed": 0, "expectedUint32": 2137479269 },
+  { "input": "🏳️‍🌈", "seed": 0, "expectedUint32": 2046586608 },
+  { "input": "emoji-😀-end", "seed": 0, "expectedUint32": 3021407503 },
+  { "input": "Grüße 世界 🌍", "seed": 0, "expectedUint32": 1637837346 }
+]
