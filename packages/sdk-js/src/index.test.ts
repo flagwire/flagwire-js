@@ -136,4 +136,50 @@ describe("browser client", () => {
     expect(localStorage.removeItem).toHaveBeenCalled();
     client.close();
   });
+
+  it("keeps the warm snapshot on quota 429 and honors Retry-After", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "FREE_USAGE_LIMIT_REACHED",
+            resetsAt: "2026-09-01T00:00:00.000Z",
+          },
+        }),
+        { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "3600" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClient({
+      clientKey,
+      context: { key: "user" },
+      bootstrap: first,
+      pollIntervalMs: 1_000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.get("checkout", false)).toBe(true);
+    expect(localStorage.removeItem).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    client.close();
+  });
+
+  it("uses caller defaults for a cold client while the Free allowance is restricted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: "FREE_USAGE_LIMIT_REACHED" } }), {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "60" },
+        }),
+      ),
+    );
+    const client = createClient({ clientKey, context: { key: "cold-user" } });
+
+    await expect(client.ready()).rejects.toThrow("HTTP 429");
+    expect(client.get("checkout", false)).toBe(false);
+    expect(localStorage.removeItem).not.toHaveBeenCalled();
+    client.close();
+  });
 });

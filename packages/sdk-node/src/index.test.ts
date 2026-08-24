@@ -95,4 +95,38 @@ describe("server client", () => {
     expect(client.evaluate("missing", { key: "user" }, "safe")).toBe("safe");
     await client.close();
   });
+
+  it("restores a failed exposure batch and retries it without losing counts", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(bundleResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createServerClient({ serverKey, stream: false });
+    await client.waitForInitialization();
+    client.evaluate("test-flag", vector.context, false);
+
+    await expect(client.flush()).rejects.toThrow("HTTP 503");
+    await client.flush();
+    const eventCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/v1/events"));
+    expect(eventCalls).toHaveLength(2);
+    expect(eventCalls[0]?.[1]?.body).toEqual(eventCalls[1]?.[1]?.body);
+    await client.close();
+  });
+
+  it("drains queued exposure events during an orderly close", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/v1/events") ? new Response(null, { status: 202 }) : bundleResponse(),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createServerClient({ serverKey, stream: false });
+    await client.waitForInitialization();
+    client.evaluate("test-flag", vector.context, false);
+
+    await client.close();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/v1/events"))).toHaveLength(
+      1,
+    );
+  });
 });

@@ -53,6 +53,8 @@ export interface ServerClient {
 
 const defaultBaseUrl = "https://edge.flagwire.dev";
 const slowPollIntervalMs = 300_000;
+const automaticFlushIntervalMs = 60_000;
+const maxQueuedEventKeys = 1_000;
 
 function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
   const candidate: unknown = timer;
@@ -84,6 +86,7 @@ export function createServerClient(options: ServerClientOptions): ServerClient {
   let reconnectAttempt = 0;
   let inFlight: Promise<void> | undefined;
   let initialized = false;
+  let lastAutomaticFlushAt = 0;
   let resolveInitialized: (() => void) | undefined;
   const initializedPromise = new Promise<void>((resolve) => {
     resolveInitialized = resolve;
@@ -146,11 +149,12 @@ export function createServerClient(options: ServerClientOptions): ServerClient {
     const flagVersion = bundle?.flags[flagKey]?.version;
     if (!flagVersion || !detail.variantKey) return;
     const key = `${flagKey}\u0000${flagVersion}\u0000${detail.variantKey}`;
+    if (!events.has(key) && events.size >= maxQueuedEventKeys) return;
     events.set(key, (events.get(key) ?? 0) + 1);
-    if (events.size >= 100) void flush().catch(() => undefined);
+    if (events.size >= 100) void automaticFlush().catch(() => undefined);
   };
 
-  const flush = async () => {
+  const flushBatch = async () => {
     if (events.size === 0) return;
     const batch = [...events].slice(0, 100);
     batch.forEach(([key]) => events.delete(key));
@@ -169,16 +173,25 @@ export function createServerClient(options: ServerClientOptions): ServerClient {
       batch.forEach(([key, count]) => events.set(key, (events.get(key) ?? 0) + count));
       throw error;
     }
-    if (events.size > 0) await flush();
+  };
+
+  const flush = async () => {
+    while (events.size > 0) await flushBatch();
+  };
+
+  const automaticFlush = async () => {
+    if (Date.now() - lastAutomaticFlushAt < automaticFlushIntervalMs) return;
+    lastAutomaticFlushAt = Date.now();
+    await flushBatch();
   };
 
   const scheduleEvents = () => {
     if (closed) return;
     eventTimer = setTimeout(() => {
-      void flush()
+      void automaticFlush()
         .catch(() => undefined)
         .finally(scheduleEvents);
-    }, 10_000);
+    }, automaticFlushIntervalMs);
     unrefTimer(eventTimer);
   };
 

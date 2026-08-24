@@ -60,6 +60,9 @@ export interface FlagClient {
 
 const defaultBaseUrl = "https://edge.flagwire.dev";
 const cacheNamespace = "flagwire:v1";
+const automaticFlushIntervalMs = 60_000;
+const slowPollIntervalMs = 300_000;
+const maxQueuedEventKeys = 1_000;
 
 function validSnapshot(input: unknown): input is EvalSnapshot {
   if (!input || typeof input !== "object") return false;
@@ -135,8 +138,13 @@ export function createClient(options: ClientOptions): FlagClient {
   let generation = 0;
   let inFlight: { generation: number; promise: Promise<void> } | undefined;
   let socket: WebSocket | undefined;
+  let streamHealthy = false;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let eventTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectAttempt = 0;
+  let retryEvaluationAt = 0;
+  let lastAutomaticFlushAt = 0;
 
   const emit = (before: EvalSnapshot | undefined, after: EvalSnapshot | undefined) => {
     const keys = changedKeys(before, after);
@@ -151,6 +159,7 @@ export function createClient(options: ClientOptions): FlagClient {
 
   const refresh = () => {
     if (closed) return Promise.resolve();
+    if (Date.now() < retryEvaluationAt) return Promise.resolve();
     const requestGeneration = generation;
     if (inFlight?.generation === requestGeneration) return inFlight.promise;
     const requestContext = context;
@@ -169,7 +178,14 @@ export function createClient(options: ClientOptions): FlagClient {
         socket?.close(1008, "SDK key rejected");
         emit(before, undefined);
       }
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers.get("Retry-After"));
+        retryEvaluationAt = Number.isFinite(retryAfter)
+          ? Date.now() + Math.max(1, retryAfter) * 1_000
+          : Date.now() + automaticFlushIntervalMs;
+      }
       if (!response.ok) throw new Error(`FlagWire evaluation failed with HTTP ${response.status}`);
+      retryEvaluationAt = 0;
       const input: unknown = await response.json();
       if (!validSnapshot(input))
         throw new Error("FlagWire returned an invalid evaluation snapshot");
@@ -188,11 +204,12 @@ export function createClient(options: ClientOptions): FlagClient {
   const queueExposure = (key: string, detail: EvaluationDetail | undefined) => {
     if (!detail?.variant) return;
     const eventKey = `${key}\u0000${detail.flagVersion}\u0000${detail.variant}`;
+    if (!events.has(eventKey) && events.size >= maxQueuedEventKeys) return;
     events.set(eventKey, (events.get(eventKey) ?? 0) + 1);
-    if (events.size >= 100) void flush().catch(() => undefined);
+    if (events.size >= 100) void automaticFlush().catch(() => undefined);
   };
 
-  const flush = async () => {
+  const flushBatch = async () => {
     if (events.size === 0) return;
     const batch = [...events].slice(0, 100);
     batch.forEach(([key]) => events.delete(key));
@@ -212,7 +229,37 @@ export function createClient(options: ClientOptions): FlagClient {
       batch.forEach(([key, count]) => events.set(key, (events.get(key) ?? 0) + count));
       throw error;
     }
-    if (events.size > 0) await flush();
+  };
+
+  const flush = async () => {
+    while (events.size > 0) await flushBatch();
+  };
+
+  const automaticFlush = async () => {
+    if (Date.now() - lastAutomaticFlushAt < automaticFlushIntervalMs) return;
+    lastAutomaticFlushAt = Date.now();
+    await flushBatch();
+  };
+
+  const pollIntervalMs = Math.max(1_000, options.pollIntervalMs ?? 60_000);
+  const schedulePoll = () => {
+    if (closed) return;
+    if (pollTimer) clearTimeout(pollTimer);
+    const delay = streamHealthy ? Math.max(slowPollIntervalMs, pollIntervalMs) : pollIntervalMs;
+    pollTimer = setTimeout(() => {
+      void refresh()
+        .catch(() => undefined)
+        .finally(schedulePoll);
+    }, delay);
+  };
+
+  const scheduleEvents = () => {
+    if (closed) return;
+    eventTimer = setTimeout(() => {
+      void automaticFlush()
+        .catch(() => undefined)
+        .finally(scheduleEvents);
+    }, automaticFlushIntervalMs);
   };
 
   const connect = () => {
@@ -222,7 +269,9 @@ export function createClient(options: ClientOptions): FlagClient {
     url.searchParams.set("key", options.clientKey);
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
+      streamHealthy = true;
       reconnectAttempt = 0;
+      schedulePoll();
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -240,6 +289,8 @@ export function createClient(options: ClientOptions): FlagClient {
     });
     socket.addEventListener("close", (event) => {
       socket = undefined;
+      streamHealthy = false;
+      schedulePoll();
       if (!closed && event.code !== 1008) {
         const delay = Math.min(30_000, 500 * 2 ** reconnectAttempt++);
         reconnectTimer = setTimeout(connect, delay);
@@ -249,14 +300,13 @@ export function createClient(options: ClientOptions): FlagClient {
 
   const initial = snapshot ? Promise.resolve() : refresh();
   if (snapshot) void refresh().catch(() => undefined);
-  const pollTimer = setInterval(
-    () => void refresh().catch(() => undefined),
-    options.pollIntervalMs ?? 60_000,
-  );
-  const eventTimer = setInterval(() => void flush().catch(() => undefined), 10_000);
-  const onFocus = () => void refresh().catch(() => undefined);
+  schedulePoll();
+  scheduleEvents();
+  const onFocus = () => {
+    if (!streamHealthy) void refresh().catch(() => undefined);
+  };
   const onVisibility = () => {
-    if (document.visibilityState === "hidden") void flush().catch(() => undefined);
+    if (document.visibilityState === "hidden") void automaticFlush().catch(() => undefined);
   };
   if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
@@ -266,8 +316,8 @@ export function createClient(options: ClientOptions): FlagClient {
     close() {
       if (closed) return;
       closed = true;
-      clearInterval(pollTimer);
-      clearInterval(eventTimer);
+      if (pollTimer) clearTimeout(pollTimer);
+      if (eventTimer) clearTimeout(eventTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close(1000, "Client closed");
       if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
