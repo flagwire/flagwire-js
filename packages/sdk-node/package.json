@@ -1,6 +1,6 @@
 {
   "name": "@flagwire/sdk-node",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-evaluation Node.js SDK for FlagWire feature flags",
   "keywords": [
     "feature-flags",
