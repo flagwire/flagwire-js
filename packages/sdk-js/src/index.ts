@@ -298,12 +298,12 @@ export function createClient(options: ClientOptions): FlagClient {
     return promise;
   };
 
-  const checkVersion = async () => {
+  const checkVersion = async (reason: "activation" | "context" | "focus" | "manual" | "poll") => {
     if (closed || rejected || Date.now() < retryEvaluationAt) return;
     const requestGeneration = generation;
     const headers: Record<string, string> = {};
     if (snapshot) headers["If-None-Match"] = `"v${snapshot.version}"`;
-    const response = await request("/v1/version", "api", { headers });
+    const response = await request("/v1/version", reason, { headers });
     if (requestGeneration !== generation) return;
     if (response.status === 304) {
       lastVersionCheckAt = Date.now();
@@ -377,7 +377,7 @@ export function createClient(options: ClientOptions): FlagClient {
     const delay = Math.round(baseDelay * (0.9 + Math.random() * 0.2));
     pollTimer = setTimeout(() => {
       pollTimer = undefined;
-      void checkVersion()
+      void checkVersion("poll")
         .catch(() => undefined)
         .finally(schedulePoll);
     }, delay);
@@ -436,7 +436,7 @@ export function createClient(options: ClientOptions): FlagClient {
     activated = true;
     schedulePoll();
     connect();
-    activationPromise = snapshot ? checkVersion() : evaluate("initial");
+    activationPromise = snapshot ? checkVersion("activation") : evaluate("initial");
     return activationPromise;
   };
   const refresh = async ({ force = false }: { force?: boolean } = {}) => {
@@ -447,7 +447,7 @@ export function createClient(options: ClientOptions): FlagClient {
       return;
     }
     if (force) await evaluate("force");
-    else await checkVersion();
+    else await checkVersion("manual");
   };
   const onFocus = () => {
     if (
@@ -456,7 +456,7 @@ export function createClient(options: ClientOptions): FlagClient {
       visible() &&
       Date.now() - lastVersionCheckAt >= staleAfterMs
     ) {
-      void checkVersion().catch(() => undefined);
+      void checkVersion("focus").catch(() => undefined);
     }
   };
   const onVisibility = () => {
@@ -522,7 +522,7 @@ export function createClient(options: ClientOptions): FlagClient {
       snapshot = readCache(storageKey);
       emit(before, snapshot);
       if (!activated) return;
-      if (snapshot) await checkVersion();
+      if (snapshot) await checkVersion("context");
       else await evaluate("context");
     },
     start,
