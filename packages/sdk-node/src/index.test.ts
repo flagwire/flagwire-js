@@ -29,6 +29,17 @@ describe("server client", () => {
     await client.waitForInitialization({ timeoutMs: 1_000 });
     expect(client.evaluateDetail("test-flag", vector.context, false)).toEqual(vector.expected);
     expect(client.evaluate("test-flag", vector.context, false)).toBe(true);
+    expect(client.browserSnapshot(vector.context)).toEqual({
+      flags: {
+        "test-flag": {
+          flagVersion: vector.bundle.flags["test-flag"].version,
+          reason: vector.expected.reason,
+          value: vector.expected.value,
+          variant: vector.expected.variantKey,
+        },
+      },
+      version: vector.bundle.version,
+    });
     expect(client.allFlags(vector.context)).toEqual({ "test-flag": true });
     await client.flush();
 

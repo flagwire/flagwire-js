@@ -25,3 +25,8 @@ const bundle: Bundle = result.data;
 
 The exported schemas define the protocol boundary shared by the SDKs and edge API. Parse untrusted
 input with `safeParse` and avoid activating partially validated data.
+
+Evaluation contexts are limited to one key plus 64 attributes. Attribute names, strings, and
+string-array members are bounded by the exported schema. Browser keys use exact allowed origins:
+HTTPS for deployed applications, with explicitly configured HTTP localhost origins available for
+development. Wildcard origins are rejected.

@@ -24,7 +24,9 @@ function fakeClient(initial?: EvaluationDetail): {
       return () => listeners.delete(listener);
     },
     ready: vi.fn(async () => undefined),
+    refresh: vi.fn(async () => undefined),
     setContext: vi.fn(async () => undefined),
+    start: vi.fn(async () => undefined),
   };
   return {
     client,

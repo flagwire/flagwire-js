@@ -32,6 +32,10 @@ await flags.ready();
 const redesigned = flags.get("checkout-redesign", false);
 ```
 
+Browser clients activate when the page is visible by default. Warm caches and server-provided
+bootstrap snapshots are available immediately and use a version check before any new evaluation.
+Interval polling and streaming are opt-in.
+
 Always pass a default value. If initialization or refresh fails, evaluation remains predictable and
 uses the application-provided default. Browser keys begin with `pk_live_` and are intended for
 client-side use; never expose a `sk_live_` server key in browser code.

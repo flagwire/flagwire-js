@@ -8,7 +8,8 @@ const sockets = new Set();
 let enabled = false;
 let version = 1;
 const cors = {
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Allow-Headers":
+    "Authorization, Content-Type, If-None-Match, X-FlagWire-Reason, X-FlagWire-SDK",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Origin": "*",
 };
@@ -49,6 +50,16 @@ const server = createServer((request, response) => {
         },
       }),
     );
+    return;
+  }
+  if (request.url === "/v1/version" && request.method === "GET") {
+    const etag = `"v${version}"`;
+    if (request.headers["if-none-match"] === etag) {
+      response.writeHead(304, { ...cors, ETag: etag }).end();
+    } else {
+      response.writeHead(200, { ...cors, "Content-Type": "application/json", ETag: etag });
+      response.end(JSON.stringify({ version }));
+    }
     return;
   }
   if (request.url === "/v1/events" && request.method === "POST") {

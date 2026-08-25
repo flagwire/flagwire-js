@@ -17,6 +17,7 @@ import { FlagProvider, useFlag } from "@flagwire/sdk-react";
 const client = createClient({
   clientKey: import.meta.env.VITE_FLAGWIRE_CLIENT_KEY,
   context: { key: "user-123" },
+  activation: "visible",
 });
 
 function Checkout() {

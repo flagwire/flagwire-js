@@ -37,10 +37,32 @@ export const descriptionSchema = z.string().trim().max(1_000).nullable().optiona
 export const flagTypeSchema = z.enum(["boolean", "string", "json"]);
 export const environmentSlugSchema = z.enum(["dev", "staging", "prod"]);
 export const sdkKeyKindSchema = z.enum(["client", "server"]);
+export const runtimeAccessModeSchema = z.enum(["full", "cached_only", "suspended"]);
+export const browserOriginSchema = z
+  .url()
+  .max(2_048)
+  .superRefine((value, context) => {
+    const url = new URL(value);
+    const localHost =
+      url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && localHost)) {
+      context.addIssue({ code: "custom", message: "Origins must use HTTPS, except localhost" });
+    }
+    if (value !== url.origin) {
+      context.addIssue({
+        code: "custom",
+        message: "Origins must not contain a path, query, or hash",
+      });
+    }
+  });
 export const sdkKeyLookupSchema = z
   .object({
+    accessMode: runtimeAccessModeSchema,
+    allowedOrigins: z.array(browserOriginSchema).max(20).nullable(),
     envId: resourceIdSchema,
     kind: sdkKeyKindSchema,
+    orgId: resourceIdSchema,
+    projectId: resourceIdSchema,
     revoked: z.boolean(),
   })
   .strict();
@@ -325,19 +347,33 @@ export const revokedBundleSchema = bundleSchema.refine(
   { message: "Revoked bundles cannot contain flags", path: ["flags"] },
 );
 
+const contextAttributeNameSchema = z.string().min(1).max(128);
+
 export const contextAttributeSchema = z.union([
-  z.string(),
+  z.string().max(1_024),
   z.number().finite(),
   z.boolean(),
-  z.array(z.string()),
+  z.array(z.string().max(256)).max(64),
 ]);
 
 export const evaluationContextSchema = z
   .object({
-    key: z.string(),
-    attributes: z.record(z.string(), contextAttributeSchema).optional(),
+    key: z.string().min(1).max(256),
+    attributes: z.record(contextAttributeNameSchema, contextAttributeSchema).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((context, refinement) => {
+    if (context.attributes && Object.keys(context.attributes).length > 64) {
+      refinement.addIssue({
+        code: "too_big",
+        origin: "object",
+        maximum: 64,
+        inclusive: true,
+        message: "Evaluation contexts cannot contain more than 64 attributes",
+        path: ["attributes"],
+      });
+    }
+  });
 
 export const evaluationRequestSchema = z.object({ context: evaluationContextSchema }).strict();
 
@@ -411,7 +447,37 @@ export const updateSegmentSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
-export const createSdkKeySchema = z.object({ kind: sdkKeyKindSchema }).strict();
+export const createSdkKeySchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("client"),
+      allowedOrigins: z.array(browserOriginSchema).min(1).max(20),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (new Set(value.allowedOrigins).size !== value.allowedOrigins.length) {
+        context.addIssue({
+          code: "custom",
+          message: "Allowed origins must be unique",
+          path: ["allowedOrigins"],
+        });
+      }
+    }),
+  z.object({ kind: z.literal("server") }).strict(),
+]);
+
+export const updateSdkKeyOriginsSchema = z
+  .object({ allowedOrigins: z.array(browserOriginSchema).min(1).max(20) })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.allowedOrigins).size !== value.allowedOrigins.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Allowed origins must be unique",
+        path: ["allowedOrigins"],
+      });
+    }
+  });
 
 export const auditCursorSchema = z
   .object({
