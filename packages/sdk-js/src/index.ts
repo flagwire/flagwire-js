@@ -96,7 +96,7 @@ function canonicalContext(input: EvaluationContext): EvaluationContext {
     left.localeCompare(right),
   );
   if (!input.key || input.key.length > 256 || entries.length > 64) {
-    throw new Error("Invalid FlagWire context");
+    throw new Error("Invalid context");
   }
   const attributes: Record<string, ContextAttribute> = {};
   for (const [name, value] of entries) {
@@ -106,7 +106,7 @@ function canonicalContext(input: EvaluationContext): EvaluationContext {
       (typeof value === "string" && value.length > 1_024) ||
       (typeof value === "number" && !Number.isFinite(value)) ||
       (Array.isArray(value) && (value.length > 64 || value.some((item) => item.length > 256)));
-    if (invalid) throw new Error("Invalid FlagWire context");
+    if (invalid) throw new Error("Invalid context");
     if (Array.isArray(value)) {
       attributes[name] = [...value].sort();
     } else {
@@ -256,13 +256,13 @@ export function createClient(options: ClientOptions): FlagClient {
   const assertResponse = (response: Response) => {
     if (response.status === 401 || response.status === 403) handleRejected();
     if (response.status === 429) handleRetry(response);
-    if (!response.ok) throw new Error(`FlagWire HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
   };
 
   const evaluate = (reason: "initial" | "context" | "config" | "force" | "api") => {
     if (closed || rejected) return Promise.resolve();
     if (Date.now() < retryEvaluationAt) {
-      return Promise.reject(new Error("FlagWire retry window is active"));
+      return Promise.reject(new Error("Retry pending"));
     }
     const requestGeneration = generation;
     if (inFlight?.generation === requestGeneration) return inFlight.promise;
@@ -278,7 +278,7 @@ export function createClient(options: ClientOptions): FlagClient {
       assertResponse(response);
       retryEvaluationAt = 0;
       const input: unknown = await response.json();
-      if (!validSnapshot(input)) throw new Error("Invalid FlagWire response");
+      if (!validSnapshot(input)) throw new Error("Invalid response");
       if (input.version < (snapshot?.version ?? 0)) return;
       const before = snapshot;
       snapshot = input;
@@ -287,7 +287,7 @@ export function createClient(options: ClientOptions): FlagClient {
       settleReady();
     })()
       .catch((error: unknown) => {
-        const normalized = error instanceof Error ? error : new Error("FlagWire failed");
+        const normalized = error instanceof Error ? error : new Error("SDK error");
         if (!snapshot) settleReady(normalized);
         throw normalized;
       })
@@ -313,7 +313,7 @@ export function createClient(options: ClientOptions): FlagClient {
     const input = (await response.json()) as { version?: unknown } | null;
     const version = input?.version;
     if (!Number.isInteger(version) || Number(version) < 0) {
-      throw new Error("Invalid FlagWire response");
+      throw new Error("Invalid response");
     }
     lastVersionCheckAt = Date.now();
     if (!snapshot || Number(version) > snapshot.version) {
@@ -430,8 +430,8 @@ export function createClient(options: ClientOptions): FlagClient {
   };
 
   const start = () => {
-    if (closed) return Promise.reject(new Error("FlagWire client is closed"));
-    if (rejected) return Promise.reject(new Error("FlagWire client key was rejected"));
+    if (closed) return Promise.reject(new Error("client closed"));
+    if (rejected) return Promise.reject(new Error("Key rejected"));
     if (activated) return activationPromise ?? Promise.resolve();
     activated = true;
     schedulePoll();
@@ -488,7 +488,7 @@ export function createClient(options: ClientOptions): FlagClient {
       if (eventTimer) clearTimeout(eventTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close(1000);
-      if (!readySettled) settleReady(new Error("FlagWire client closed"));
+      if (!readySettled) settleReady(new Error("client closed"));
       if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
