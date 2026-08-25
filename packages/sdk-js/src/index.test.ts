@@ -94,6 +94,9 @@ describe("browser client", () => {
     await client.flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
+      "activation",
+    );
     const eventsCall = fetchMock.mock.calls.find(([url]) => url.endsWith("/v1/events"));
     const init = eventsCall?.[1];
     if (!init) throw new Error("Missing event request");
@@ -206,6 +209,9 @@ describe("browser client", () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("X-FlagWire-Reason")),
+    ).toEqual(["activation", "poll"]);
 
     documentMock.visibilityState = "hidden";
     listeners.get("visibilitychange")?.(new Event("visibilitychange"));
@@ -232,6 +238,12 @@ describe("browser client", () => {
       "/v1/version",
       "/v1/eval",
     ]);
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
+      "activation",
+    );
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
+      "manual",
+    );
     expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
       "force",
     );

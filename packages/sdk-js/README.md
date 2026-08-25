@@ -71,6 +71,10 @@ available immediately; activation first performs an unmetered version check and 
 when configuration changed. Equivalent contexts are canonicalized, so reordered attributes or
 string-array members do not cause a refresh. Always provide a safe code default.
 
+Version probes identify only their lifecycle cause (`activation`, `context`, `focus`, `manual`, or
+`poll`) and SDK version for operational diagnostics. They never send evaluation-context values,
+user identifiers, email addresses, or page URLs.
+
 ## Updating from 0.1
 
 Version 0.2 changes the default lifecycle: activation waits for a visible page and interval polling
