@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bundleSchema,
+  createSdkKeySchema,
   clauseSchema,
   compiledFlagSchema,
   evaluationContextSchema,
@@ -132,6 +133,19 @@ describe("normative schemas", () => {
         attributes: { nested: { region: "eu-west" } },
       }).success,
     ).toBe(false);
+    expect(
+      evaluationContextSchema.safeParse({
+        key: "user-1",
+        attributes: Object.fromEntries(
+          Array.from({ length: 65 }, (_, index) => [`attribute-${index}`, index]),
+        ),
+      }).success,
+    ).toBe(false);
+    expect(evaluationContextSchema.safeParse({ key: "x".repeat(257) }).success).toBe(false);
+    expect(
+      evaluationContextSchema.safeParse({ key: "user", attributes: { value: "x".repeat(1_025) } })
+        .success,
+    ).toBe(false);
   });
 
   it("caps exposure batches and rejects invalid counters", () => {
@@ -147,15 +161,46 @@ describe("normative schemas", () => {
 
   it("keeps the SDK-key cache value strict", () => {
     expect(
-      sdkKeyLookupSchema.safeParse({ envId: "env_7xk2", kind: "client", revoked: false }).success,
+      sdkKeyLookupSchema.safeParse({
+        accessMode: "full",
+        allowedOrigins: ["https://app.example.com"],
+        envId: "env_7xk2",
+        kind: "client",
+        orgId: "org_7xk2",
+        projectId: "project_7xk2",
+        revoked: false,
+      }).success,
     ).toBe(true);
     expect(
       sdkKeyLookupSchema.safeParse({
+        accessMode: "full",
+        allowedOrigins: null,
         envId: "env_7xk2",
         kind: "client",
         revoked: false,
-        projectId: "project_1",
       }).success,
+    ).toBe(false);
+  });
+
+  it("requires exact safe origins for browser keys and none for server keys", () => {
+    expect(
+      createSdkKeySchema.safeParse({
+        kind: "client",
+        allowedOrigins: ["https://app.example.com", "http://localhost:3000"],
+      }).success,
+    ).toBe(true);
+    expect(
+      createSdkKeySchema.safeParse({ kind: "client", allowedOrigins: ["http://example.com"] })
+        .success,
+    ).toBe(false);
+    expect(
+      createSdkKeySchema.safeParse({ kind: "client", allowedOrigins: ["https://example.com/path"] })
+        .success,
+    ).toBe(false);
+    expect(createSdkKeySchema.safeParse({ kind: "server" }).success).toBe(true);
+    expect(
+      createSdkKeySchema.safeParse({ kind: "server", allowedOrigins: ["https://example.com"] })
+        .success,
     ).toBe(false);
   });
 });

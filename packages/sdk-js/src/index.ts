@@ -39,12 +39,19 @@ export type FlagValue<K extends string, D extends JsonValue> = K extends keyof F
     : D
   : D;
 
+export type ActivationMode = "immediate" | "visible" | "manual";
+export type ExposureTracking = "automatic" | "disabled";
+
 export interface ClientOptions {
+  activation?: ActivationMode;
   baseUrl?: string;
   bootstrap?: EvalSnapshot;
   clientKey: string;
   context: EvaluationContext;
-  pollIntervalMs?: number;
+  exposureTracking?: ExposureTracking;
+  pollIntervalMs?: number | false;
+  refreshOnFocus?: boolean;
+  staleAfterMs?: number;
   stream?: boolean;
 }
 
@@ -55,14 +62,17 @@ export interface FlagClient {
   get<K extends FlagKey, D extends JsonValue>(key: K, defaultValue: D): FlagValue<K, D>;
   on(event: "update", listener: (changedKeys: string[]) => void): () => void;
   ready(): Promise<void>;
+  refresh(options?: { force?: boolean }): Promise<void>;
   setContext(context: EvaluationContext): Promise<void>;
+  start(): Promise<void>;
 }
 
 const defaultBaseUrl = "https://edge.flagwire.dev";
-const cacheNamespace = "flagwire:v1";
+const cacheNamespace = "fw:v2";
 const automaticFlushIntervalMs = 60_000;
 const slowPollIntervalMs = 300_000;
 const maxQueuedEventKeys = 1_000;
+const sdkHeader = "js/0.2.0";
 
 function validSnapshot(input: unknown): input is EvalSnapshot {
   if (!input || typeof input !== "object") return false;
@@ -81,13 +91,52 @@ function validSnapshot(input: unknown): input is EvalSnapshot {
   );
 }
 
-function contextCacheKey(clientKey: string, context: EvaluationContext): string {
-  const input = JSON.stringify(context);
-  let hash = 2_166_136_261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash = Math.imul(hash ^ input.charCodeAt(index), 16_777_619);
+function canonicalContext(input: EvaluationContext): EvaluationContext {
+  const entries = Object.entries(input.attributes ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  if (!input.key || input.key.length > 256 || entries.length > 64) {
+    throw new Error("Invalid FlagWire context");
   }
-  return `${cacheNamespace}:${clientKey.slice(-12)}:${(hash >>> 0).toString(36)}`;
+  const attributes: Record<string, ContextAttribute> = {};
+  for (const [name, value] of entries) {
+    const invalid =
+      !name ||
+      name.length > 128 ||
+      (typeof value === "string" && value.length > 1_024) ||
+      (typeof value === "number" && !Number.isFinite(value)) ||
+      (Array.isArray(value) && (value.length > 64 || value.some((item) => item.length > 256)));
+    if (invalid) throw new Error("Invalid FlagWire context");
+    if (Array.isArray(value)) {
+      attributes[name] = [...value].sort();
+    } else {
+      attributes[name] = value;
+    }
+  }
+  return entries.length > 0 ? { key: input.key, attributes } : { key: input.key };
+}
+
+function hash64(input: string): string {
+  let first = 2_166_136_261;
+  let second = 2_166_136_261 ^ 0x9e3779b9;
+  for (let index = 0; index < input.length; index += 1) {
+    const code = input.charCodeAt(index);
+    first = Math.imul(first ^ code, 16_777_619);
+    second = Math.imul(second ^ code, 2_246_822_519);
+  }
+  return `${(first >>> 0).toString(36)}${(second >>> 0).toString(36)}`;
+}
+
+function contextFingerprint(context: EvaluationContext): string {
+  return hash64(JSON.stringify(context));
+}
+
+function cachePrefix(clientKey: string): string {
+  return `${cacheNamespace}:${hash64(clientKey)}:`;
+}
+
+function contextCacheKey(clientKey: string, context: EvaluationContext): string {
+  return `${cachePrefix(clientKey)}${contextFingerprint(context)}`;
 }
 
 function readCache(key: string): EvalSnapshot | undefined {
@@ -107,9 +156,13 @@ function writeCache(key: string, snapshot: EvalSnapshot): void {
   }
 }
 
-function removeCache(key: string): void {
+function clearClientCache(clientKey: string): void {
   try {
-    localStorage.removeItem(key);
+    const prefix = cachePrefix(clientKey);
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith(prefix)) localStorage.removeItem(key);
+    }
   } catch {
     // Storage is optional.
   }
@@ -124,17 +177,28 @@ function changedKeys(before: EvalSnapshot | undefined, after: EvalSnapshot | und
 
 export function createClient(options: ClientOptions): FlagClient {
   if (!/^pk_live_[A-Za-z0-9_-]{43}$/.test(options.clientKey)) {
-    throw new Error("FlagWire browser clients require a valid pk_live_ client key");
+    throw new Error("Invalid key");
   }
-  if (!options.context.key) throw new Error("FlagWire context.key cannot be empty");
 
   const baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, "");
+  const activation = options.activation ?? "visible";
+  const pollIntervalMs =
+    options.pollIntervalMs === false || options.pollIntervalMs === undefined
+      ? false
+      : Math.max(30_000, options.pollIntervalMs);
+  const staleAfterMs = Math.max(30_000, options.staleAfterMs ?? 300_000);
   const listeners = new Set<(keys: string[]) => void>();
-  const events = new Map<string, number>();
-  let context = options.context;
+  const events = new Map<string, object>();
+  const exposed = new Set<string>();
+  let context = canonicalContext(options.context);
+  let contextJson = JSON.stringify(context);
+  let fingerprint = contextFingerprint(context);
   let storageKey = contextCacheKey(options.clientKey, context);
   let snapshot = validSnapshot(options.bootstrap) ? options.bootstrap : readCache(storageKey);
   let closed = false;
+  let rejected = false;
+  let activated = false;
+  let activationPromise: Promise<void> | undefined;
   let generation = 0;
   let inFlight: { generation: number; promise: Promise<void> } | undefined;
   let socket: WebSocket | undefined;
@@ -142,135 +206,199 @@ export function createClient(options: ClientOptions): FlagClient {
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let eventTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  let reconnectAttempt = 0;
   let retryEvaluationAt = 0;
-  let lastAutomaticFlushAt = 0;
+  let lastVersionCheckAt = 0;
+  let readySettled = Boolean(snapshot);
+  let resolveReady: (() => void) | undefined;
+  let rejectReady: ((error: Error) => void) | undefined;
+  const readyPromise = snapshot
+    ? Promise.resolve()
+    : new Promise<void>((resolve, reject) => {
+        resolveReady = resolve;
+        rejectReady = reject;
+      });
 
+  const visible = () => typeof document === "undefined" || document.visibilityState !== "hidden";
   const emit = (before: EvalSnapshot | undefined, after: EvalSnapshot | undefined) => {
     const keys = changedKeys(before, after);
     if (keys.length > 0) listeners.forEach((listener) => listener(keys));
   };
-
-  const request = (path: string, init: RequestInit) =>
+  const settleReady = (error?: Error) => {
+    if (readySettled) return;
+    readySettled = true;
+    if (error) rejectReady?.(error);
+    else resolveReady?.();
+  };
+  const request = (path: string, reason: string, init: RequestInit = {}) =>
     fetch(`${baseUrl}${path}`, {
       ...init,
-      headers: { Authorization: `Bearer ${options.clientKey}`, ...init.headers },
+      headers: {
+        Authorization: `Bearer ${options.clientKey}`,
+        "X-FlagWire-Reason": reason,
+        "X-FlagWire-SDK": sdkHeader,
+        ...init.headers,
+      },
     });
+  const handleRejected = () => {
+    const before = snapshot;
+    rejected = true;
+    snapshot = undefined;
+    clearClientCache(options.clientKey);
+    socket?.close(1008);
+    emit(before, undefined);
+  };
+  const handleRetry = (response: Response) => {
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    retryEvaluationAt = Number.isFinite(retryAfter)
+      ? Date.now() + Math.max(1, retryAfter) * 1_000
+      : Date.now() + automaticFlushIntervalMs;
+  };
+  const assertResponse = (response: Response) => {
+    if (response.status === 401 || response.status === 403) handleRejected();
+    if (response.status === 429) handleRetry(response);
+    if (!response.ok) throw new Error(`FlagWire HTTP ${response.status}`);
+  };
 
-  const refresh = () => {
-    if (closed) return Promise.resolve();
-    if (Date.now() < retryEvaluationAt) return Promise.resolve();
+  const evaluate = (reason: "initial" | "context" | "config" | "force" | "api") => {
+    if (closed || rejected) return Promise.resolve();
+    if (Date.now() < retryEvaluationAt) {
+      return Promise.reject(new Error("FlagWire retry window is active"));
+    }
     const requestGeneration = generation;
     if (inFlight?.generation === requestGeneration) return inFlight.promise;
     const requestContext = context;
     const requestStorageKey = storageKey;
     const promise = (async () => {
-      const response = await request("/v1/eval", {
+      const response = await request("/v1/eval", reason, {
         body: JSON.stringify({ context: requestContext }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       if (requestGeneration !== generation) return;
-      if (response.status === 401 || response.status === 403) {
-        const before = snapshot;
-        snapshot = undefined;
-        removeCache(requestStorageKey);
-        socket?.close(1008, "SDK key rejected");
-        emit(before, undefined);
-      }
-      if (response.status === 429) {
-        const retryAfter = Number(response.headers.get("Retry-After"));
-        retryEvaluationAt = Number.isFinite(retryAfter)
-          ? Date.now() + Math.max(1, retryAfter) * 1_000
-          : Date.now() + automaticFlushIntervalMs;
-      }
-      if (!response.ok) throw new Error(`FlagWire evaluation failed with HTTP ${response.status}`);
+      assertResponse(response);
       retryEvaluationAt = 0;
       const input: unknown = await response.json();
-      if (!validSnapshot(input))
-        throw new Error("FlagWire returned an invalid evaluation snapshot");
+      if (!validSnapshot(input)) throw new Error("Invalid FlagWire response");
       if (input.version < (snapshot?.version ?? 0)) return;
       const before = snapshot;
       snapshot = input;
       writeCache(requestStorageKey, input);
       emit(before, input);
-    })().finally(() => {
-      if (inFlight?.promise === promise) inFlight = undefined;
-    });
+      settleReady();
+    })()
+      .catch((error: unknown) => {
+        const normalized = error instanceof Error ? error : new Error("FlagWire failed");
+        if (!snapshot) settleReady(normalized);
+        throw normalized;
+      })
+      .finally(() => {
+        if (inFlight?.promise === promise) inFlight = undefined;
+      });
     inFlight = { generation: requestGeneration, promise };
     return promise;
   };
 
-  const queueExposure = (key: string, detail: EvaluationDetail | undefined) => {
-    if (!detail?.variant) return;
-    const eventKey = `${key}\u0000${detail.flagVersion}\u0000${detail.variant}`;
-    if (!events.has(eventKey) && events.size >= maxQueuedEventKeys) return;
-    events.set(eventKey, (events.get(eventKey) ?? 0) + 1);
-    if (events.size >= 100) void automaticFlush().catch(() => undefined);
+  const checkVersion = async () => {
+    if (closed || rejected || Date.now() < retryEvaluationAt) return;
+    const requestGeneration = generation;
+    const headers: Record<string, string> = {};
+    if (snapshot) headers["If-None-Match"] = `"v${snapshot.version}"`;
+    const response = await request("/v1/version", "api", { headers });
+    if (requestGeneration !== generation) return;
+    if (response.status === 304) {
+      lastVersionCheckAt = Date.now();
+      return;
+    }
+    assertResponse(response);
+    const input = (await response.json()) as { version?: unknown } | null;
+    const version = input?.version;
+    if (!Number.isInteger(version) || Number(version) < 0) {
+      throw new Error("Invalid FlagWire response");
+    }
+    lastVersionCheckAt = Date.now();
+    if (!snapshot || Number(version) > snapshot.version) {
+      await evaluate(snapshot ? "config" : "initial");
+    }
   };
 
   const flushBatch = async () => {
-    if (events.size === 0) return;
+    if (!activated || rejected || events.size === 0) return;
     const batch = [...events].slice(0, 100);
     batch.forEach(([key]) => events.delete(key));
-    const body = batch.map(([key, count]) => {
-      const [flagKey, flagVersion, variant] = key.split("\u0000");
-      return { count, flagKey, flagVersion: Number(flagVersion), variant };
-    });
+    const body = batch.map(([, event]) => event);
     try {
-      const response = await request("/v1/events", {
+      const response = await request("/v1/events", "api", {
         body: JSON.stringify(body),
         headers: { "Content-Type": "application/json" },
         keepalive: true,
         method: "POST",
       });
-      if (!response.ok) throw new Error(`FlagWire event flush failed with HTTP ${response.status}`);
+      assertResponse(response);
     } catch (error) {
-      batch.forEach(([key, count]) => events.set(key, (events.get(key) ?? 0) + count));
+      batch.forEach(([key, event]) => events.set(key, event));
       throw error;
     }
   };
-
   const flush = async () => {
-    while (events.size > 0) await flushBatch();
+    while (events.size > 0 && activated && !rejected) await flushBatch();
   };
-
-  const automaticFlush = async () => {
-    if (Date.now() - lastAutomaticFlushAt < automaticFlushIntervalMs) return;
-    lastAutomaticFlushAt = Date.now();
-    await flushBatch();
-  };
-
-  const pollIntervalMs = Math.max(1_000, options.pollIntervalMs ?? 60_000);
-  const schedulePoll = () => {
-    if (closed) return;
-    if (pollTimer) clearTimeout(pollTimer);
-    const delay = streamHealthy ? Math.max(slowPollIntervalMs, pollIntervalMs) : pollIntervalMs;
-    pollTimer = setTimeout(() => {
-      void refresh()
-        .catch(() => undefined)
-        .finally(schedulePoll);
-    }, delay);
-  };
-
   const scheduleEvents = () => {
-    if (closed) return;
+    if (closed || eventTimer || events.size === 0) return;
     eventTimer = setTimeout(() => {
-      void automaticFlush()
+      eventTimer = undefined;
+      void flushBatch()
         .catch(() => undefined)
         .finally(scheduleEvents);
     }, automaticFlushIntervalMs);
   };
-
+  const queueExposure = (key: string, detail: EvaluationDetail | undefined) => {
+    if (options.exposureTracking === "disabled" || !detail?.variant) return;
+    const eventKey = `${fingerprint}\u0000${key}\u0000${detail.flagVersion}\u0000${detail.variant}`;
+    if (exposed.has(eventKey) || events.size >= maxQueuedEventKeys) return;
+    exposed.add(eventKey);
+    events.set(eventKey, {
+      count: 1,
+      flagKey: key,
+      flagVersion: detail.flagVersion,
+      variant: detail.variant,
+    });
+    scheduleEvents();
+  };
+  const schedulePoll = () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    if (
+      closed ||
+      !activated ||
+      pollIntervalMs === false ||
+      (activation === "visible" && !visible())
+    )
+      return;
+    const baseDelay = streamHealthy ? Math.max(slowPollIntervalMs, pollIntervalMs) : pollIntervalMs;
+    const delay = Math.round(baseDelay * (0.9 + Math.random() * 0.2));
+    pollTimer = setTimeout(() => {
+      pollTimer = undefined;
+      void checkVersion()
+        .catch(() => undefined)
+        .finally(schedulePoll);
+    }, delay);
+  };
   const connect = () => {
-    if (closed || !options.stream || typeof WebSocket === "undefined") return;
+    if (
+      closed ||
+      rejected ||
+      !activated ||
+      !visible() ||
+      !options.stream ||
+      typeof WebSocket === "undefined" ||
+      socket
+    )
+      return;
     const url = new URL(`${baseUrl}/v1/stream`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.searchParams.set("key", options.clientKey);
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
       streamHealthy = true;
-      reconnectAttempt = 0;
       schedulePoll();
     });
     socket.addEventListener("message", (event) => {
@@ -281,7 +409,11 @@ export function createClient(options: ClientOptions): FlagClient {
           typeof message.version === "number" &&
           message.version > (snapshot?.version ?? 0)
         ) {
-          void refresh().catch(() => undefined);
+          const version = message.version;
+          const update = () => {
+            if (version > (snapshot?.version ?? 0)) return evaluate("config");
+          };
+          void (inFlight?.promise.finally(update) ?? update())?.catch(() => undefined);
         }
       } catch {
         // Ignore unknown server frames; clients never send application frames.
@@ -291,26 +423,62 @@ export function createClient(options: ClientOptions): FlagClient {
       socket = undefined;
       streamHealthy = false;
       schedulePoll();
-      if (!closed && event.code !== 1008) {
-        const delay = Math.min(30_000, 500 * 2 ** reconnectAttempt++);
-        reconnectTimer = setTimeout(connect, delay);
+      if (!closed && !rejected && visible() && event.code !== 1008) {
+        reconnectTimer = setTimeout(connect, 500 + Math.random() * 4_500);
       }
     });
   };
 
-  const initial = snapshot ? Promise.resolve() : refresh();
-  if (snapshot) void refresh().catch(() => undefined);
-  schedulePoll();
-  scheduleEvents();
+  const start = () => {
+    if (closed) return Promise.reject(new Error("FlagWire client is closed"));
+    if (rejected) return Promise.reject(new Error("FlagWire client key was rejected"));
+    if (activated) return activationPromise ?? Promise.resolve();
+    activated = true;
+    schedulePoll();
+    connect();
+    activationPromise = snapshot ? checkVersion() : evaluate("initial");
+    return activationPromise;
+  };
+  const refresh = async ({ force = false }: { force?: boolean } = {}) => {
+    if (closed) return;
+    if (!activated) {
+      if (activation === "manual") return;
+      await start();
+      return;
+    }
+    if (force) await evaluate("force");
+    else await checkVersion();
+  };
   const onFocus = () => {
-    if (!streamHealthy) void refresh().catch(() => undefined);
+    if (
+      options.refreshOnFocus !== false &&
+      activated &&
+      visible() &&
+      Date.now() - lastVersionCheckAt >= staleAfterMs
+    ) {
+      void checkVersion().catch(() => undefined);
+    }
   };
   const onVisibility = () => {
-    if (document.visibilityState === "hidden") void automaticFlush().catch(() => undefined);
+    if (!visible()) {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = undefined;
+      socket?.close(1000);
+      return;
+    }
+    if (activation === "visible" && !activated) void start().catch(() => undefined);
+    else if (activated) {
+      connect();
+      schedulePoll();
+      onFocus();
+    }
   };
+
   if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
-  connect();
+  if (activation === "immediate" || (activation === "visible" && visible())) {
+    void start().catch(() => undefined);
+  }
 
   return {
     close() {
@@ -319,44 +487,44 @@ export function createClient(options: ClientOptions): FlagClient {
       if (pollTimer) clearTimeout(pollTimer);
       if (eventTimer) clearTimeout(eventTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      socket?.close(1000, "Client closed");
+      socket?.close(1000);
+      if (!readySettled) settleReady(new Error("FlagWire client closed"));
       if (typeof window !== "undefined") window.removeEventListener("focus", onFocus);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
-      void flush().catch(() => undefined);
+      if (activated) void flush().catch(() => undefined);
       listeners.clear();
     },
-    detail(key) {
-      return snapshot?.flags[key];
-    },
+    detail: (key) => snapshot?.flags[key],
     flush,
     get(key, defaultValue) {
       const detail = snapshot?.flags[key];
       queueExposure(key, detail);
       return (detail?.value ?? defaultValue) as FlagValue<typeof key, typeof defaultValue>;
     },
-    on(event, listener) {
-      if (event !== "update") return () => undefined;
+    on(_event, listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    ready: () => initial,
+    ready: () => readyPromise,
+    refresh,
     async setContext(nextContext) {
-      if (!nextContext.key) throw new Error("FlagWire context.key cannot be empty");
-      const nextStorageKey = contextCacheKey(options.clientKey, nextContext);
-      if (nextStorageKey === storageKey) {
-        context = nextContext;
-        await refresh();
-        return;
-      }
+      const canonical = canonicalContext(nextContext);
+      const nextJson = JSON.stringify(canonical);
+      if (nextJson === contextJson) return;
       const before = snapshot;
       generation += 1;
-      context = nextContext;
-      storageKey = nextStorageKey;
+      context = canonical;
+      contextJson = nextJson;
+      fingerprint = contextFingerprint(context);
+      storageKey = contextCacheKey(options.clientKey, context);
       snapshot = readCache(storageKey);
       emit(before, snapshot);
-      await refresh();
+      if (!activated) return;
+      if (snapshot) await checkVersion();
+      else await evaluate("context");
     },
+    start,
   };
 }

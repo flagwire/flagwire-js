@@ -50,11 +50,17 @@ Create one long-lived client per process instead of one per request.
 - `evaluate(key, context, defaultValue)` returns a locally evaluated value or the supplied default.
 - `evaluateDetail(key, context, defaultValue)` also returns the evaluation reason and variant.
 - `allFlags(context)` evaluates every flag in the active bundle.
+- `browserSnapshot(context)` evaluates the active bundle into a browser-compatible bootstrap
+  snapshot. Embed it only through your framework's safe JSON serialization path.
 - `flush()` sends queued exposure events.
 - `close()` stops background work, flushes pending events, and releases the stream.
 
 Bundles are validated before activation. Invalid, unavailable, or revoked bundle state fails
 closed to application-provided defaults.
+
+For server-rendered applications, `browserSnapshot(context)` lets the browser reuse exactly the
+server's active bundle version without an initial remote evaluation. Include only the targeting
+attributes your rules require; do not place secrets or unnecessary personal data in HTML.
 
 ## Key safety
 

@@ -34,8 +34,22 @@ export interface ServerClientOptions {
   stream?: boolean;
 }
 
+export interface BrowserEvalSnapshot {
+  flags: Record<
+    string,
+    {
+      flagVersion: number;
+      reason: EvaluationReason;
+      value: JsonValue;
+      variant: string | null;
+    }
+  >;
+  version: number;
+}
+
 export interface ServerClient {
   allFlags(context: EvaluationContext): Record<string, JsonValue>;
+  browserSnapshot(context: EvaluationContext): BrowserEvalSnapshot;
   close(): Promise<void>;
   evaluate<K extends FlagKey, D extends JsonValue>(
     key: K,
@@ -259,6 +273,24 @@ export function createServerClient(options: ServerClientOptions): ServerClient {
           return [key, detail.value];
         }),
       );
+    },
+    browserSnapshot(context) {
+      if (!bundle) return { flags: {}, version: 0 };
+      const evaluated = evaluateBundle(bundle, context);
+      return {
+        flags: Object.fromEntries(
+          Object.entries(evaluated.flags).map(([key, detail]) => [
+            key,
+            {
+              flagVersion: bundle!.flags[key]!.version,
+              reason: detail.reason,
+              value: detail.value,
+              variant: detail.variantKey,
+            },
+          ]),
+        ),
+        version: evaluated.version,
+      };
     },
     async close() {
       if (closed) return;

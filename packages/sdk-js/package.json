@@ -1,6 +1,6 @@
 {
   "name": "@flagwire/sdk-js",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Zero-dependency browser SDK for FlagWire feature flags",
   "keywords": [
     "feature-flags",
