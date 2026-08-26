@@ -72,7 +72,7 @@ const cacheNamespace = "fw:v2";
 const automaticFlushIntervalMs = 60_000;
 const slowPollIntervalMs = 300_000;
 const maxQueuedEventKeys = 1_000;
-const sdkHeader = "js/0.2.0";
+const sdkHeader = "js/0.2.2";
 
 function validSnapshot(input: unknown): input is EvalSnapshot {
   if (!input || typeof input !== "object") return false;

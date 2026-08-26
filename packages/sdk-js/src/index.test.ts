@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import packageMetadata from "../package.json";
 import { createClient, type EvalSnapshot } from "./index";
 
 const clientKey = `pk_live_${"a".repeat(43)}`;
@@ -94,6 +95,9 @@ describe("browser client", () => {
     await client.flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("X-FlagWire-SDK")).toBe(
+      `js/${packageMetadata.version}`,
+    );
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
       "activation",
     );
