@@ -1,6 +1,6 @@
 {
   "name": "flagwire-typegen",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Generate type-safe FlagWire flag definitions",
   "keywords": [
     "feature-flags",

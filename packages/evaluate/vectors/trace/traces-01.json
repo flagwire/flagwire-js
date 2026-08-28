@@ -1,0 +1,95 @@
+[
+  {
+    "name": "rule match records evaluated clauses",
+    "flagKey": "test-flag",
+    "bundle": {
+      "fmt": 1,
+      "envId": "env_test",
+      "version": 7,
+      "publishedAt": 1700000000000,
+      "revoked": false,
+      "segments": {},
+      "flags": {
+        "test-flag": {
+          "type": "boolean",
+          "version": 3,
+          "salt": "0123456789abcdef",
+          "on": true,
+          "variants": [
+            { "key": "off", "value": false },
+            { "key": "on", "value": true }
+          ],
+          "offVariant": 0,
+          "fallthrough": { "variant": 0 },
+          "rules": [
+            {
+              "id": "rule-1",
+              "clauses": [
+                { "attr": "plan", "op": "eq", "values": ["pro"], "negate": false },
+                { "attr": "region", "op": "in", "values": ["eu-west"], "negate": false }
+              ],
+              "serve": { "variant": 1 }
+            }
+          ]
+        }
+      }
+    },
+    "context": { "key": "user-1", "attributes": { "plan": "pro", "region": "eu-west" } },
+    "expected": { "variantKey": "on", "value": true, "reason": "RULE_MATCH:rule-1" },
+    "expectedTrace": {
+      "detail": { "variantKey": "on", "value": true, "reason": "RULE_MATCH:rule-1" },
+      "flagVersion": 3,
+      "matchedRuleId": "rule-1",
+      "clauseResults": [
+        { "ruleId": "rule-1", "attribute": "plan", "operator": "eq", "matched": true },
+        { "ruleId": "rule-1", "attribute": "region", "operator": "in", "matched": true }
+      ],
+      "rolloutBucket": null,
+      "source": "rule"
+    }
+  },
+  {
+    "name": "fallthrough rollout reports the stable basis-point bucket",
+    "flagKey": "new-checkout",
+    "bundle": {
+      "fmt": 1,
+      "envId": "env_test",
+      "version": 8,
+      "publishedAt": 1700000000000,
+      "revoked": false,
+      "segments": {},
+      "flags": {
+        "new-checkout": {
+          "type": "string",
+          "version": 4,
+          "salt": "0123456789abcdef",
+          "on": true,
+          "variants": [
+            { "key": "control", "value": "control" },
+            { "key": "treatment", "value": "treatment" }
+          ],
+          "offVariant": 0,
+          "fallthrough": {
+            "rollout": {
+              "variations": [
+                { "variant": 0, "weight": 50000 },
+                { "variant": 1, "weight": 50000 }
+              ]
+            }
+          },
+          "rules": []
+        }
+      }
+    },
+    "context": { "key": "user-1" },
+    "expected": { "variantKey": "control", "value": "control", "reason": "FALLTHROUGH" },
+    "expectedTrace": {
+      "detail": { "variantKey": "control", "value": "control", "reason": "FALLTHROUGH" },
+      "flagVersion": 4,
+      "matchedRuleId": null,
+      "clauseResults": [],
+      "rolloutBucket": 29575,
+      "source": "fallthrough"
+    }
+  }
+]

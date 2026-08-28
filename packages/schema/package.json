@@ -1,6 +1,6 @@
 {
   "name": "@flagwire/schema",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Normative schemas and wire contracts for FlagWire",
   "keywords": [
     "feature-flags",

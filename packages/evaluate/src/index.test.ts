@@ -7,6 +7,7 @@ import {
   bucketFor,
   evaluateBundle,
   evaluateFlag,
+  evaluateFlagWithTrace,
   murmur3_32,
   type EvaluationContext,
   type EvaluationDetail,
@@ -33,6 +34,11 @@ interface EvalVector {
   expected: EvaluationDetail;
 }
 
+interface TraceVector extends EvalVector {
+  flagKey: string;
+  expectedTrace: ReturnType<typeof evaluateFlagWithTrace>;
+}
+
 function readJson<T>(relativePath: string): T {
   return JSON.parse(
     readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8"),
@@ -46,6 +52,7 @@ const evalVectors = readdirSync(evalDirectory)
   .filter((file) => file.endsWith(".json"))
   .sort()
   .map((file) => JSON.parse(readFileSync(`${evalDirectory}/${file}`, "utf8")) as EvalVector);
+const traceVectors = readJson<TraceVector[]>("../vectors/trace/traces-01.json");
 
 describe("Murmur3 compatibility vectors", () => {
   it.each(murmurVectors)("hashes $input", ({ input, seed, expectedUint32 }) => {
@@ -71,6 +78,41 @@ describe("evaluation compatibility vectors", () => {
 
   it.each(evalVectors)("$name", ({ bundle, context, expected }) => {
     expect(evaluateFlag(bundle, "test-flag", context, "CODE_DEFAULT")).toEqual(expected);
+  });
+});
+
+describe("explainable evaluation compatibility vectors", () => {
+  it.each(traceVectors)("traces $name without changing its result", (vector) => {
+    const trace = evaluateFlagWithTrace(
+      vector.bundle,
+      vector.flagKey,
+      vector.context,
+      "CODE_DEFAULT",
+    );
+    expect(trace).toEqual(vector.expectedTrace);
+    expect(trace.detail).toEqual(
+      evaluateFlag(vector.bundle, vector.flagKey, vector.context, "CODE_DEFAULT"),
+    );
+  });
+
+  it.each(evalVectors)("preserves $name", ({ bundle, context, expected }) => {
+    expect(evaluateFlagWithTrace(bundle, "test-flag", context, "CODE_DEFAULT").detail).toEqual(
+      expected,
+    );
+  });
+
+  it("never returns evaluation-context values in a trace", () => {
+    const vector = traceVectors[0];
+    expect(vector).toBeDefined();
+    const sensitiveValue = "private-customer-value";
+    const trace = evaluateFlagWithTrace(
+      vector?.bundle,
+      vector?.flagKey ?? "test-flag",
+      { key: "private-user-id", attributes: { plan: sensitiveValue } },
+      false,
+    );
+    expect(JSON.stringify(trace)).not.toContain(sensitiveValue);
+    expect(JSON.stringify(trace)).not.toContain("private-user-id");
   });
 });
 

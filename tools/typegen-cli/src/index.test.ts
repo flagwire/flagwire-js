@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generateTypes, type TypegenManifest } from "./index";
+import { filterFlagsForScope, generateTypes, type TypegenManifest } from "./index";
 
 const manifest: TypegenManifest = {
   projectId: "project_test",
@@ -8,6 +8,7 @@ const manifest: TypegenManifest = {
     {
       key: "checkout.enabled",
       type: "boolean",
+      deliveryScope: "browser",
       variants: [
         { key: "on", value: true },
         { key: "off", value: false },
@@ -16,6 +17,7 @@ const manifest: TypegenManifest = {
     {
       key: "checkout.theme",
       type: "string",
+      deliveryScope: "both",
       variants: [
         { key: "control", value: "classic" },
         { key: "treatment", value: "minimal" },
@@ -24,6 +26,7 @@ const manifest: TypegenManifest = {
     {
       key: "checkout.payload",
       type: "json",
+      deliveryScope: "server",
       variants: [{ key: "control", value: { accent: "violet", columns: 2 } }],
     },
   ],
@@ -47,5 +50,33 @@ describe("type generator", () => {
     expect(generateTypes({ projectId: "project_empty", flags: [] })).toContain(
       "export type FlagKey = never;",
     );
+  });
+
+  it("filters browser and server manifests without confusing scope with authorization", () => {
+    expect(filterFlagsForScope(manifest, "browser").map((flag) => flag.key)).toEqual([
+      "checkout.enabled",
+      "checkout.theme",
+    ]);
+    expect(filterFlagsForScope(manifest, "server").map((flag) => flag.key)).toEqual([
+      "checkout.theme",
+      "checkout.payload",
+    ]);
+    expect(generateTypes(manifest, "browser")).not.toContain('readonly "checkout.payload"');
+    expect(generateTypes(manifest, "server")).not.toContain('readonly "checkout.enabled"');
+  });
+
+  it("treats legacy manifests without delivery scope as both", () => {
+    const legacy: TypegenManifest = {
+      projectId: "project_legacy",
+      flags: [
+        {
+          key: "legacy.enabled",
+          type: "boolean",
+          variants: [{ key: "on", value: true }],
+        },
+      ],
+    };
+    expect(filterFlagsForScope(legacy, "browser")).toHaveLength(1);
+    expect(filterFlagsForScope(legacy, "server")).toHaveLength(1);
   });
 });

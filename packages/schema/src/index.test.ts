@@ -7,9 +7,13 @@ import {
   compiledFlagSchema,
   evaluationContextSchema,
   exposureEventsSchema,
+  flagDraftSchema,
   flagDefinitionSchema,
+  flagMetadataSchema,
+  publishDraftRequestSchema,
   rolloutSchema,
   sdkKeyLookupSchema,
+  typegenManifestSchema,
 } from "./index";
 
 const variants = [
@@ -88,6 +92,106 @@ describe("normative schemas", () => {
         variants: [{ key: "on", value: "yes" }],
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts normalized release-control metadata without breaking legacy definitions", () => {
+    const legacy = {
+      key: "new-checkout",
+      name: "New checkout",
+      type: "boolean" as const,
+      variants,
+    };
+    expect(flagDefinitionSchema.safeParse(legacy).success).toBe(true);
+    expect(
+      flagDefinitionSchema.safeParse({
+        ...legacy,
+        metadata: {
+          deliveryScope: "browser",
+          ownerId: "user_7xk2",
+          tags: ["checkout", "release-control"],
+          lifecycle: "temporary",
+          expectedRemovalAt: "2026-12-31",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicate, unnormalized, and excessive flag tags", () => {
+    const metadata = {
+      deliveryScope: "both",
+      ownerId: null,
+      lifecycle: "temporary",
+      expectedRemovalAt: null,
+    } as const;
+    expect(
+      flagMetadataSchema.safeParse({ ...metadata, tags: ["release", "release"] }).success,
+    ).toBe(false);
+    expect(flagMetadataSchema.safeParse({ ...metadata, tags: ["Needs Review"] }).success).toBe(
+      false,
+    );
+    expect(
+      flagMetadataSchema.safeParse({
+        ...metadata,
+        tags: Array.from({ length: 11 }, (_, index) => `tag-${index}`),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("prevents permanent flags from carrying removal dates", () => {
+    expect(
+      flagMetadataSchema.safeParse({
+        deliveryScope: "server",
+        ownerId: null,
+        tags: [],
+        lifecycle: "permanent",
+        expectedRemovalAt: "2027-01-01",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates optimistic draft and idempotent publish contracts", () => {
+    const config = {
+      on: true,
+      offVariant: 1,
+      fallthrough: { variant: 0 },
+      rules: [],
+    };
+    expect(
+      flagDraftSchema.safeParse({
+        flagId: "flag_7xk2",
+        envId: "env_7xk2",
+        baseVersion: 0,
+        revision: 1,
+        config,
+        comment: null,
+        updatedBy: "user_7xk2",
+        updatedAt: "2026-08-28T05:30:00.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      publishDraftRequestSchema.safeParse({
+        expectedBaseVersion: 0,
+        expectedDraftRevision: 1,
+        operationId: "publish_01K4GP58P8JRM8PGBP0586VKYV",
+        comment: "",
+      }).success,
+    ).toBe(true);
+    expect(
+      publishDraftRequestSchema.safeParse({
+        expectedBaseVersion: 0,
+        expectedDraftRevision: 0,
+        operationId: "publish_01K4GP58P8JRM8PGBP0586VKYV",
+        comment: "Ship",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("defaults legacy typegen manifests to both delivery scopes", () => {
+    const parsed = typegenManifestSchema.parse({
+      projectId: "project_test",
+      flags: [{ key: "checkout.enabled", type: "boolean", variants }],
+    });
+    expect(parsed.flags[0]?.deliveryScope).toBe("both");
   });
 
   it("caps regex patterns at 256 characters", () => {

@@ -30,3 +30,8 @@ Evaluation contexts are limited to one key plus 64 attributes. Attribute names, 
 string-array members are bounded by the exported schema. Browser keys use exact allowed origins:
 HTTPS for deployed applications, with explicitly configured HTTP localhost origins available for
 development. Wildcard origins are rejected.
+
+Release-control contracts include normalized flag metadata, optimistic shared drafts, idempotent
+publish requests, and delivery-aware type-generation manifests. Existing flag definitions and
+legacy typegen manifests remain valid; missing delivery scope is interpreted as `both` while
+deployments migrate.

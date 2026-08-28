@@ -33,6 +33,20 @@ export interface EvaluationSnapshot {
   flags: Record<string, EvaluationDetail>;
 }
 
+export interface EvaluationTrace {
+  detail: EvaluationDetail;
+  flagVersion: number;
+  matchedRuleId: string | null;
+  clauseResults: Array<{
+    ruleId: string;
+    attribute: string;
+    operator: Clause["op"];
+    matched: boolean;
+  }>;
+  rolloutBucket: number | null;
+  source: "off" | "rule" | "fallthrough" | "error";
+}
+
 type MatchResult = "error" | "match" | "no-match";
 
 const encoder = new TextEncoder();
@@ -354,6 +368,129 @@ function resolveServe(
   return offDetail(flag, "ERROR", codeDefault);
 }
 
+function resolveServeWithTrace(
+  flag: CompiledFlag,
+  flagKey: string,
+  context: EvaluationContext,
+  serve: Serve,
+  reason: EvaluationReason,
+  codeDefault: JsonValue,
+): { detail: EvaluationDetail; rolloutBucket: number | null } {
+  if ("variant" in serve) {
+    return {
+      detail: variantDetail(flag, serve.variant, reason, codeDefault),
+      rolloutBucket: null,
+    };
+  }
+  if (!context.key) {
+    return {
+      detail: offDetail(flag, "ERROR_MISSING_KEY", codeDefault),
+      rolloutBucket: null,
+    };
+  }
+
+  const bucket = bucketFor(context.key, flagKey, flag.salt).uint32;
+  const rolloutBucket = Math.floor((bucket * 100_000) / UINT32_RANGE);
+  let cumulativeWeight = 0;
+  for (const variation of serve.rollout.variations) {
+    cumulativeWeight += variation.weight;
+    if (bucket * 100_000 < cumulativeWeight * UINT32_RANGE) {
+      return {
+        detail: variantDetail(flag, variation.variant, reason, codeDefault),
+        rolloutBucket,
+      };
+    }
+  }
+  return { detail: offDetail(flag, "ERROR", codeDefault), rolloutBucket };
+}
+
+function isErrorDetail(detail: EvaluationDetail): boolean {
+  return detail.reason === "ERROR" || detail.reason === "ERROR_MISSING_KEY";
+}
+
+function evaluateCompiledFlagWithTrace(
+  bundle: Bundle,
+  flagKey: string,
+  flag: CompiledFlag,
+  context: EvaluationContext,
+  codeDefault: JsonValue,
+): EvaluationTrace {
+  const clauseResults: EvaluationTrace["clauseResults"] = [];
+  try {
+    if (!flag.on) {
+      return {
+        detail: offDetail(flag, "OFF", codeDefault),
+        flagVersion: flag.version,
+        matchedRuleId: null,
+        clauseResults,
+        rolloutBucket: null,
+        source: "off",
+      };
+    }
+
+    for (const rule of flag.rules) {
+      let matches = true;
+      for (const clause of rule.clauses) {
+        const result = matchClause(clause, bundle.segments, context, new Set());
+        clauseResults.push({
+          ruleId: rule.id,
+          attribute: clause.attr,
+          operator: clause.op,
+          matched: result === "match",
+        });
+        if (result !== "match") {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        const resolved = resolveServeWithTrace(
+          flag,
+          flagKey,
+          context,
+          rule.serve,
+          `RULE_MATCH:${rule.id}`,
+          codeDefault,
+        );
+        return {
+          detail: resolved.detail,
+          flagVersion: flag.version,
+          matchedRuleId: rule.id,
+          clauseResults,
+          rolloutBucket: resolved.rolloutBucket,
+          source: isErrorDetail(resolved.detail) ? "error" : "rule",
+        };
+      }
+    }
+
+    const resolved = resolveServeWithTrace(
+      flag,
+      flagKey,
+      context,
+      flag.fallthrough,
+      "FALLTHROUGH",
+      codeDefault,
+    );
+    return {
+      detail: resolved.detail,
+      flagVersion: flag.version,
+      matchedRuleId: null,
+      clauseResults,
+      rolloutBucket: resolved.rolloutBucket,
+      source: isErrorDetail(resolved.detail) ? "error" : "fallthrough",
+    };
+  } catch {
+    return {
+      detail: offDetail(flag, "ERROR", codeDefault),
+      flagVersion: flag.version,
+      matchedRuleId: null,
+      clauseResults,
+      rolloutBucket: null,
+      source: "error",
+    };
+  }
+}
+
 function evaluateCompiledFlag(
   bundle: Bundle,
   flagKey: string,
@@ -402,6 +539,47 @@ export function evaluateFlag(
   const flag = parsed.data.flags[flagKey];
   if (!flag) return defaultDetail(codeDefault, "FLAG_NOT_FOUND");
   return evaluateCompiledFlag(parsed.data, flagKey, flag, context, codeDefault);
+}
+
+export function evaluateFlagWithTrace(
+  bundleInput: unknown,
+  flagKey: string,
+  context: EvaluationContext,
+  codeDefault: JsonValue,
+): EvaluationTrace {
+  const parsed = bundleSchema.safeParse(bundleInput);
+  if (!parsed.success) {
+    return {
+      detail: defaultDetail(codeDefault, "ERROR"),
+      flagVersion: 0,
+      matchedRuleId: null,
+      clauseResults: [],
+      rolloutBucket: null,
+      source: "error",
+    };
+  }
+  if (parsed.data.revoked) {
+    return {
+      detail: defaultDetail(codeDefault, "REVOKED"),
+      flagVersion: 0,
+      matchedRuleId: null,
+      clauseResults: [],
+      rolloutBucket: null,
+      source: "error",
+    };
+  }
+  const flag = parsed.data.flags[flagKey];
+  if (!flag) {
+    return {
+      detail: defaultDetail(codeDefault, "FLAG_NOT_FOUND"),
+      flagVersion: 0,
+      matchedRuleId: null,
+      clauseResults: [],
+      rolloutBucket: null,
+      source: "error",
+    };
+  }
+  return evaluateCompiledFlagWithTrace(parsed.data, flagKey, flag, context, codeDefault);
 }
 
 export function evaluateBundle(
