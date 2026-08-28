@@ -35,6 +35,43 @@ export const displayNameSchema = z.string().trim().min(1).max(120);
 export const descriptionSchema = z.string().trim().max(1_000).nullable().optional();
 
 export const flagTypeSchema = z.enum(["boolean", "string", "json"]);
+export const deliveryScopeSchema = z.enum(["browser", "server", "both"]);
+export const flagLifecycleSchema = z.enum(["temporary", "permanent"]);
+export const flagTagSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(
+    /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/,
+    "Use normalized lowercase letters, numbers, dots, underscores, or hyphens",
+  );
+export const flagTagsSchema = z
+  .array(flagTagSchema)
+  .max(10)
+  .superRefine((tags, context) => {
+    if (new Set(tags).size !== tags.length) {
+      context.addIssue({ code: "custom", message: "Flag tags must be unique" });
+    }
+  });
+export const flagMetadataSchema = z
+  .object({
+    deliveryScope: deliveryScopeSchema,
+    ownerId: resourceIdSchema.nullable(),
+    tags: flagTagsSchema,
+    lifecycle: flagLifecycleSchema,
+    expectedRemovalAt: z.iso.date().nullable(),
+  })
+  .strict()
+  .superRefine((metadata, context) => {
+    if (metadata.lifecycle === "permanent" && metadata.expectedRemovalAt !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "Permanent flags cannot have an expected removal date",
+        path: ["expectedRemovalAt"],
+      });
+    }
+  });
 export const environmentSlugSchema = z.enum(["dev", "staging", "prod"]);
 export const sdkKeyKindSchema = z.enum(["client", "server"]);
 export const runtimeAccessModeSchema = z.enum(["full", "cached_only", "suspended"]);
@@ -282,6 +319,7 @@ export const flagDefinitionSchema = z
     name: displayNameSchema,
     type: flagTypeSchema,
     description: descriptionSchema,
+    metadata: flagMetadataSchema.optional(),
     variants: variantsSchema,
   })
   .strict()
@@ -413,6 +451,7 @@ export const updateFlagSchema = z
   .object({
     name: displayNameSchema.optional(),
     description: descriptionSchema,
+    metadata: flagMetadataSchema.optional(),
     variants: variantsSchema.optional(),
     archived: z.boolean().optional(),
   })
@@ -423,6 +462,38 @@ export const updateFlagEnvironmentSchema = z
   .object({
     config: flagConfigSchema,
     comment: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+
+const draftCommentSchema = z.string().trim().max(500).nullable();
+
+export const flagDraftSchema = z
+  .object({
+    flagId: resourceIdSchema,
+    envId: resourceIdSchema,
+    baseVersion: z.number().int().nonnegative(),
+    revision: z.number().int().positive(),
+    config: flagConfigSchema,
+    comment: draftCommentSchema,
+    updatedBy: resourceIdSchema,
+    updatedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export const putFlagDraftSchema = z
+  .object({
+    expectedDraftRevision: z.number().int().nonnegative(),
+    config: flagConfigSchema,
+    comment: draftCommentSchema.optional(),
+  })
+  .strict();
+
+export const publishDraftRequestSchema = z
+  .object({
+    expectedBaseVersion: z.number().int().nonnegative(),
+    expectedDraftRevision: z.number().int().positive(),
+    operationId: resourceIdSchema,
+    comment: z.string().trim().max(500),
   })
   .strict();
 
@@ -486,12 +557,37 @@ export const auditCursorSchema = z
   })
   .strict();
 
+export const typegenScopeSchema = z.enum(["browser", "server", "all"]);
+
+export const typegenFlagSchema = z
+  .object({
+    key: resourceKeySchema,
+    type: flagTypeSchema,
+    deliveryScope: deliveryScopeSchema.default("both"),
+    variants: variantsSchema,
+  })
+  .strict();
+
+export const typegenManifestSchema = z
+  .object({
+    flags: z.array(typegenFlagSchema),
+    projectId: resourceIdSchema,
+  })
+  .strict();
+
 export type Bundle = z.infer<typeof bundleSchema>;
 export type Clause = z.infer<typeof clauseSchema>;
 export type CompiledFlag = z.infer<typeof compiledFlagSchema>;
+export type DeliveryScope = z.infer<typeof deliveryScopeSchema>;
 export type FlagConfig = z.infer<typeof flagConfigSchema>;
 export type FlagDefinition = z.infer<typeof flagDefinitionSchema>;
+export type FlagDraft = z.infer<typeof flagDraftSchema>;
+export type FlagLifecycle = z.infer<typeof flagLifecycleSchema>;
+export type FlagMetadata = z.infer<typeof flagMetadataSchema>;
+export type PublishDraftRequest = z.infer<typeof publishDraftRequestSchema>;
 export type Rule = z.infer<typeof ruleSchema>;
 export type SegmentRules = z.infer<typeof segmentRulesSchema>;
 export type Serve = z.infer<typeof serveSchema>;
+export type TypegenManifest = z.infer<typeof typegenManifestSchema>;
+export type TypegenScope = z.infer<typeof typegenScopeSchema>;
 export type Variant = z.infer<typeof variantSchema>;

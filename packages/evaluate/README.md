@@ -12,9 +12,16 @@ pnpm add @flagwire/evaluate
 ## Usage
 
 ```ts
-import { evaluateFlag } from "@flagwire/evaluate";
+import { evaluateFlag, evaluateFlagWithTrace } from "@flagwire/evaluate";
 
 const detail = evaluateFlag(
+  bundle,
+  "checkout-redesign",
+  { key: "user-123", attributes: { region: "eu-west" } },
+  false,
+);
+
+const trace = evaluateFlagWithTrace(
   bundle,
   "checkout-redesign",
   { key: "user-123", attributes: { region: "eu-west" } },
@@ -23,7 +30,9 @@ const detail = evaluateFlag(
 ```
 
 The package exports deterministic hashing, bucket calculation, single-flag evaluation, bundle
-evaluation, and their TypeScript types. Inputs use the contracts from `@flagwire/schema`.
+evaluation, explainable traces, and their TypeScript types. A trace reports the evaluated clauses,
+matched rule, stable rollout bucket, flag version, and result source without returning context
+values. Inputs use the contracts from `@flagwire/schema`.
 
 ## Compatibility vectors
 
