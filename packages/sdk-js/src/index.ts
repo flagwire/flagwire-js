@@ -72,7 +72,7 @@ const cacheNamespace = "fw:v2";
 const automaticFlushIntervalMs = 60_000;
 const slowPollIntervalMs = 300_000;
 const maxQueuedEventKeys = 1_000;
-const sdkHeader = "js/0.2.2";
+const sdkHeader = "js/0.2.3";
 
 function validSnapshot(input: unknown): input is EvalSnapshot {
   if (!input || typeof input !== "object") return false;
@@ -93,7 +93,7 @@ function validSnapshot(input: unknown): input is EvalSnapshot {
 
 function canonicalContext(input: EvaluationContext): EvaluationContext {
   const entries = Object.entries(input.attributes ?? {}).sort(([left], [right]) =>
-    left.localeCompare(right),
+    left > right ? 1 : -1,
   );
   if (!input.key || input.key.length > 256 || entries.length > 64) {
     throw new Error("Invalid context");
@@ -113,7 +113,7 @@ function canonicalContext(input: EvaluationContext): EvaluationContext {
       attributes[name] = value;
     }
   }
-  return entries.length > 0 ? { key: input.key, attributes } : { key: input.key };
+  return entries.length ? { key: input.key, attributes } : { key: input.key };
 }
 
 function hash64(input: string): string {
@@ -201,6 +201,7 @@ export function createClient(options: ClientOptions): FlagClient {
   let activationPromise: Promise<void> | undefined;
   let generation = 0;
   let inFlight: { generation: number; promise: Promise<void> } | undefined;
+  let versionInFlight: Promise<void> | undefined;
   let socket: WebSocket | undefined;
   let streamHealthy = false;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -218,10 +219,10 @@ export function createClient(options: ClientOptions): FlagClient {
         rejectReady = reject;
       });
 
-  const visible = () => typeof document === "undefined" || document.visibilityState !== "hidden";
+  const visible = () => typeof document === "undefined" || document.visibilityState === "visible";
   const emit = (before: EvalSnapshot | undefined, after: EvalSnapshot | undefined) => {
     const keys = changedKeys(before, after);
-    if (keys.length > 0) listeners.forEach((listener) => listener(keys));
+    if (keys.length) listeners.forEach((listener) => listener(keys));
   };
   const settleReady = (error?: Error) => {
     if (readySettled) return;
@@ -243,6 +244,7 @@ export function createClient(options: ClientOptions): FlagClient {
     const before = snapshot;
     rejected = true;
     snapshot = undefined;
+    events.clear();
     clearClientCache(options.clientKey);
     socket?.close(1008);
     emit(before, undefined);
@@ -298,31 +300,33 @@ export function createClient(options: ClientOptions): FlagClient {
     return promise;
   };
 
-  const checkVersion = async (reason: "activation" | "context" | "focus" | "manual" | "poll") => {
-    if (closed || rejected || Date.now() < retryEvaluationAt) return;
-    const requestGeneration = generation;
-    const headers: Record<string, string> = {};
-    if (snapshot) headers["If-None-Match"] = `"v${snapshot.version}"`;
-    const response = await request("/v1/version", reason, { headers });
-    if (requestGeneration !== generation) return;
-    if (response.status === 304) {
+  const checkVersion = (reason: "activation" | "context" | "focus" | "manual" | "poll") => {
+    if (closed || rejected || Date.now() < retryEvaluationAt) return Promise.resolve();
+    return (versionInFlight ||= (async () => {
+      const requestGeneration = generation;
+      const headers: Record<string, string> = {};
+      if (snapshot) headers["If-None-Match"] = `"v${snapshot.version}"`;
+      const response = await request("/v1/version", reason, { headers });
+      if (requestGeneration !== generation) return;
+      if (response.status === 304) {
+        lastVersionCheckAt = Date.now();
+        return;
+      }
+      assertResponse(response);
+      const input = (await response.json()) as { version?: unknown } | null;
+      const version = input?.version as number;
+      if (!Number.isInteger(version) || version < 0) {
+        throw new Error("Invalid response");
+      }
       lastVersionCheckAt = Date.now();
-      return;
-    }
-    assertResponse(response);
-    const input = (await response.json()) as { version?: unknown } | null;
-    const version = input?.version;
-    if (!Number.isInteger(version) || Number(version) < 0) {
-      throw new Error("Invalid response");
-    }
-    lastVersionCheckAt = Date.now();
-    if (!snapshot || Number(version) > snapshot.version) {
-      await evaluate(snapshot ? "config" : "initial");
-    }
+      if (!snapshot || version > snapshot.version) {
+        await evaluate(snapshot ? "config" : "initial");
+      }
+    })().finally(() => (versionInFlight = undefined)));
   };
 
   const flushBatch = async () => {
-    if (!activated || rejected || events.size === 0) return;
+    if (!activated || !events.size || (activation === "visible" && !visible())) return;
     const batch = [...events].slice(0, 100);
     batch.forEach(([key]) => events.delete(key));
     const body = batch.map(([, event]) => event);
@@ -340,10 +344,10 @@ export function createClient(options: ClientOptions): FlagClient {
     }
   };
   const flush = async () => {
-    while (events.size > 0 && activated && !rejected) await flushBatch();
+    while (events.size && activated && (activation !== "visible" || visible())) await flushBatch();
   };
   const scheduleEvents = () => {
-    if (closed || eventTimer || events.size === 0) return;
+    if (closed || eventTimer || !events.size || (activation === "visible" && !visible())) return;
     eventTimer = setTimeout(() => {
       eventTimer = undefined;
       void flushBatch()
@@ -470,6 +474,7 @@ export function createClient(options: ClientOptions): FlagClient {
     else if (activated) {
       connect();
       schedulePoll();
+      scheduleEvents();
       onFocus();
     }
   };
