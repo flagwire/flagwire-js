@@ -153,6 +153,87 @@ describe("browser client", () => {
     client.close();
   });
 
+  it("pauses queued exposures while a visible client is hidden", async () => {
+    const listeners = new Map<string, EventListener>();
+    const documentMock = {
+      visibilityState: "visible",
+      addEventListener: vi.fn((name: string, listener: EventListener) =>
+        listeners.set(name, listener),
+      ),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("document", documentMock);
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/v1/version")
+        ? new Response(null, { status: 304 })
+        : new Response(null, { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClient({
+      bootstrap: first,
+      clientKey,
+      context: { key: "user" },
+      refreshOnFocus: false,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.get("checkout", false)).toBe(true);
+
+    documentMock.visibilityState = "hidden";
+    listeners.get("visibilitychange")?.(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/version");
+
+    documentMock.visibilityState = "visible";
+    listeners.get("visibilitychange")?.(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe("/v1/events");
+    client.close();
+  });
+
+  it("checks one version when focus returns after the stale interval", async () => {
+    const windowListeners = new Map<string, EventListener>();
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn((name: string, listener: EventListener) =>
+        windowListeners.set(name, listener),
+      ),
+      removeEventListener: vi.fn(),
+    });
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 304 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createClient({
+      bootstrap: first,
+      clientKey,
+      context: { key: "user" },
+      staleAfterMs: 30_000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(29_999);
+    windowListeners.get("focus")?.(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    windowListeners.get("focus")?.(new Event("focus"));
+    windowListeners.get("focus")?.(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-FlagWire-Reason")).toBe(
+      "focus",
+    );
+    client.close();
+  });
+
   it("evaluates exactly once when a version probe reports newer configuration", async () => {
     const second: EvalSnapshot = {
       version: 2,
