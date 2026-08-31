@@ -77,11 +77,11 @@ const sdkHeader = "js/0.2.3";
 function validSnapshot(input: unknown): input is EvalSnapshot {
   if (!input || typeof input !== "object") return false;
   const value = input as Partial<EvalSnapshot>;
-  if (!Number.isInteger(value.version) || (value.version ?? -1) < 0) return false;
+  if (!Number.isInteger(value.version) || (value.version as number) < 0) return false;
   if (!value.flags || typeof value.flags !== "object" || Array.isArray(value.flags)) return false;
   return Object.values(value.flags).every(
     (detail) =>
-      detail !== null &&
+      detail &&
       typeof detail === "object" &&
       Number.isInteger(detail.flagVersion) &&
       detail.flagVersion > 0 &&
@@ -107,11 +107,7 @@ function canonicalContext(input: EvaluationContext): EvaluationContext {
       (typeof value === "number" && !Number.isFinite(value)) ||
       (Array.isArray(value) && (value.length > 64 || value.some((item) => item.length > 256)));
     if (invalid) throw new Error("Invalid context");
-    if (Array.isArray(value)) {
-      attributes[name] = [...value].sort();
-    } else {
-      attributes[name] = value;
-    }
+    attributes[name] = Array.isArray(value) ? [...value].sort() : value;
   }
   return entries.length ? { key: input.key, attributes } : { key: input.key };
 }
@@ -182,10 +178,9 @@ export function createClient(options: ClientOptions): FlagClient {
 
   const baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, "");
   const activation = options.activation ?? "visible";
+  const visibleActivation = activation === "visible";
   const pollIntervalMs =
-    options.pollIntervalMs === false || options.pollIntervalMs === undefined
-      ? false
-      : Math.max(30_000, options.pollIntervalMs);
+    typeof options.pollIntervalMs === "number" ? Math.max(30_000, options.pollIntervalMs) : false;
   const staleAfterMs = Math.max(30_000, options.staleAfterMs ?? 300_000);
   const listeners = new Set<(keys: string[]) => void>();
   const events = new Map<string, object>();
@@ -280,7 +275,7 @@ export function createClient(options: ClientOptions): FlagClient {
       assertResponse(response);
       retryEvaluationAt = 0;
       const input: unknown = await response.json();
-      if (!validSnapshot(input)) throw new Error("Invalid response");
+      if (!validSnapshot(input)) throw new Error("Invalid data");
       if (input.version < (snapshot?.version ?? 0)) return;
       const before = snapshot;
       snapshot = input;
@@ -316,7 +311,7 @@ export function createClient(options: ClientOptions): FlagClient {
       const input = (await response.json()) as { version?: unknown } | null;
       const version = input?.version as number;
       if (!Number.isInteger(version) || version < 0) {
-        throw new Error("Invalid response");
+        throw new Error("Invalid data");
       }
       lastVersionCheckAt = Date.now();
       if (!snapshot || version > snapshot.version) {
@@ -326,7 +321,7 @@ export function createClient(options: ClientOptions): FlagClient {
   };
 
   const flushBatch = async () => {
-    if (!activated || !events.size || (activation === "visible" && !visible())) return;
+    if (!activated || !events.size || (visibleActivation && !visible())) return;
     const batch = [...events].slice(0, 100);
     batch.forEach(([key]) => events.delete(key));
     const body = batch.map(([, event]) => event);
@@ -344,10 +339,10 @@ export function createClient(options: ClientOptions): FlagClient {
     }
   };
   const flush = async () => {
-    while (events.size && activated && (activation !== "visible" || visible())) await flushBatch();
+    while (events.size && activated && (!visibleActivation || visible())) await flushBatch();
   };
   const scheduleEvents = () => {
-    if (closed || eventTimer || !events.size || (activation === "visible" && !visible())) return;
+    if (closed || eventTimer || !events.size || (visibleActivation && !visible())) return;
     eventTimer = setTimeout(() => {
       eventTimer = undefined;
       void flushBatch()
@@ -370,13 +365,7 @@ export function createClient(options: ClientOptions): FlagClient {
   };
   const schedulePoll = () => {
     if (pollTimer) clearTimeout(pollTimer);
-    if (
-      closed ||
-      !activated ||
-      pollIntervalMs === false ||
-      (activation === "visible" && !visible())
-    )
-      return;
+    if (closed || !activated || !pollIntervalMs || (visibleActivation && !visible())) return;
     const baseDelay = streamHealthy ? Math.max(slowPollIntervalMs, pollIntervalMs) : pollIntervalMs;
     const delay = Math.round(baseDelay * (0.9 + Math.random() * 0.2));
     pollTimer = setTimeout(() => {
@@ -470,7 +459,7 @@ export function createClient(options: ClientOptions): FlagClient {
       socket?.close(1000);
       return;
     }
-    if (activation === "visible" && !activated) void start().catch(() => undefined);
+    if (visibleActivation && !activated) void start().catch(() => undefined);
     else if (activated) {
       connect();
       schedulePoll();
@@ -481,7 +470,7 @@ export function createClient(options: ClientOptions): FlagClient {
 
   if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
-  if (activation === "immediate" || (activation === "visible" && visible())) {
+  if (activation === "immediate" || (visibleActivation && visible())) {
     void start().catch(() => undefined);
   }
 
